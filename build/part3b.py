@@ -95,49 +95,38 @@ print(f"  whole programme (x40 for adapters, scaling, ablations, seeds): {gpu_op
 
 code(r'''
 # ----------------------------------------------------------------------------- Figure 6: the training-requirement landscape
-fig, axes = plt.subplots(1, 3, figsize=(FULL, 2.5), gridspec_kw=dict(wspace=.38))
-# (a) tokens per patient, cumulative by tier
-ax = axes[0]; ygrid(ax)
+fig = plt.figure(figsize=(FULL, 3.0))
+gs = fig.add_gridspec(1, 3, width_ratios=[1.0, 1.1, .85], left=.075, right=.985, bottom=.20, top=.88, wspace=.40)
+ax = fig.add_subplot(gs[0, 0]); ygrid(ax)                                       # (a) tokens per patient, cumulative by tier
 vals = [tok_by_tier[t] for t in TIER_ORDER]
-bars = ax.bar(range(4), vals, color=PAL['seq'], width=.68)
-for i, v in enumerate(vals):
-    ax.text(i, v * 1.06, f'{v:,}', ha='center', fontsize=6.2, color=PAL['ink'], fontweight='bold')
-ax.set_yscale('log'); ax.set_xticks(range(4))
-ax.set_xticklabels(['A\nregistry', 'A+B\n+ EHR', 'A+B+C\n+ assays', '+D\n+ research'], fontsize=6.2)
-ax.set_ylabel('event tokens per patient'); ax.set_ylim(100, max(vals) * 3); panel(ax, 'a', dx=-.30)
-# (b) corpus vs compute-optimal parameters
-ax = axes[1]; ygrid(ax)
+ax.bar(range(4), vals, color=PAL['seq'], width=.66, zorder=3)
+for i, v in enumerate(vals): ax.text(i, v * 1.12, f'{v:,}', ha='center', va='bottom', fontsize=6.5, fontweight='bold')
+ax.set_yscale('log'); ax.set_ylim(100, 4e4); ax.set_xticks(range(4))
+ax.set_xticklabels(['A\nregistry', '+B\nEHR', '+C\nassays', '+D\nresearch'])
+ax.set_ylabel('event tokens per patient'); ax.set_xlabel('data tier (cumulative)'); panel(ax, 'a')
+ax = fig.add_subplot(gs[0, 1]); ygrid(ax)                                       # (b) compute-optimal size
 for tiers, c in (('A', PAL['seq'][0]), ('A+B', PAL['seq'][3])):
     q = cmp[(cmp.tiers == tiers) & (cmp.regime.str.startswith('compute'))].sort_values('patients')
-    ax.plot(q.patients, q.parameters / 1e6, marker='o', color=c, lw=1.5)
-    dlabel(ax, q.patients.iloc[-1], q.parameters.iloc[-1] / 1e6, tiers, c, dx=4, size=6.2)
-ax.text(5.5e5, .035, 'A+B+C lies on the A+B line:\nthe deep assays add information,\nnot tokens',
-        fontsize=5.3, color=PAL['ink2'], va='bottom', ha='right')
-ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xlabel('patients in the pretraining corpus')
-ax.set_ylabel('compute-optimal size (M parameters)')
-ax.axhspan(30, 200, color=PAL['aqua'], alpha=.13, lw=0)
-ax.text(1.05e3, 33, 'ALLO-FM v1:  30–200 M', fontsize=5.9, color=PAL['ink'], fontweight='bold', ha='left', va='bottom')
-panel(ax, 'b', dx=-.32)
-# (c) GPU-hours and cost for the target configuration, against reference workloads
-ax = axes[2]; ygrid(ax)
-REF = [('one run\nA+B, 100k pts', gpu_opt, PAL['aqua']),
-       ('whole\nprogramme', gpu_opt * 40, PAL['seq'][2]),
+    ax.plot(q.patients, q.parameters / 1e6, marker='o', ms=3.4, color=c, lw=1.6, label=f'Tier {tiers}', zorder=3)
+band = ax.axhspan(30, 200, color=PAL['aqua'], alpha=.16, lw=0, label='ALLO-FM v1: 30–200 M')
+ax.set_xscale('log'); ax.set_yscale('log'); ax.set_ylim(1e-2, 2e4); ax.set_xlim(7e2, 7e5)
+ax.set_xlabel('patients in the pretraining corpus'); ax.set_ylabel('compute-optimal size (M parameters)')
+ax.legend(loc='upper left', labelspacing=.3); panel(ax, 'b')
+ax = fig.add_subplot(gs[0, 2]); ygrid(ax)                                       # (c) the bill
+REF = [('one run\nA+B, 100k', gpu_opt, PAL['aqua']), ('whole\nprogramme', gpu_opt * 40, PAL['seq'][2]),
        ('7B LLM\n(for scale)', 6 * 7e9 * 2e12 / FLOPS_A100 / 3600, PAL['grey'])]
-ax.bar(range(len(REF)), [r[1] for r in REF], color=[r[2] for r in REF], width=.6)
+ax.bar(range(3), [r[1] for r in REF], color=[r[2] for r in REF], width=.6, zorder=3)
 for i, (lab, v, c) in enumerate(REF):
-    txt = f'{v:,.0f} h\n${v*COST_A100:,.0f}' if v < 1e5 else f'{v:,.0f} h\n${v*COST_A100/1e6:.1f}M'
-    ax.text(i, v * 1.6, txt, ha='center', fontsize=5.8, color=PAL['ink'], fontweight='bold')
-ax.set_yscale('log'); ax.set_xticks(range(len(REF)))
-ax.set_xticklabels([r[0] for r in REF], fontsize=6.0); ax.set_ylabel('A100-hours (log scale)')
-ax.text(1, 3.0, 'adapters, scaling,\nablations, 5 seeds', fontsize=5.0, ha='center', color=PAL['ink2'])
-ax.set_ylim(1, 1e8); panel(ax, 'c', dx=-.30)
+    txt = f'{v:,.0f} h\n${v * COST_A100:,.0f}' if v < 1e5 else f'{v:,.0f} h\n${v * COST_A100 / 1e6:.1f}M'
+    ax.text(i, v * 1.6, txt, ha='center', va='bottom', fontsize=6.4, fontweight='bold')
+ax.set_yscale('log'); ax.set_ylim(1, 1e8); ax.set_xticks(range(3)); ax.set_xticklabels([r[0] for r in REF])
+ax.set_ylabel('A100-hours (log scale)'); panel(ax, 'c')
 finish(fig, 6, 'training_requirements',
-       'Training requirements, computed from the data specification. (a) Event tokens per patient, cumulative '
-       'across data tiers: the EHR timeline (Tier B) dominates, and the deep assays add almost nothing to the '
-       'token count while costing the most to obtain. (b) Compute-optimal model size at 20 tokens per '
-       'parameter: a realistic allo-HCT corpus implies a model of 50–150 M parameters, not billions. '
-       '(c) Pretraining cost at $2 per A100-hour, against a general-purpose 7B model for scale. Compute is '
-       'not the binding constraint on a GvHD foundation model.')
+       'Training requirements, computed from the data specification. (a) Event tokens per patient, cumulative across data '
+       'tiers: the EHR timeline (Tier B) supplies nearly all of them, and the deep assays add almost none while costing the '
+       'most to obtain. (b) Compute-optimal model size at 20 tokens per parameter: a realistic corpus implies tens to '
+       'low hundreds of millions of parameters, not billions (Tier A+B+C lies on the A+B line). (c) Pretraining cost at '
+       '$2 per A100-hour against a general 7B language model. Compute is not the binding constraint.')
 ''')
 
 code(r'''

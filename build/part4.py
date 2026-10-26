@@ -406,76 +406,72 @@ assign_splits(cohort, protocol, seed):
 )
 
 code(r'''
-# ----------------------------------------------------------------------------- Figure 7: the shape of GvHD-Bench (tasks x landmark, readiness, powered verdict)
-LAND_X = {'day \u22127 (before conditioning)': -7, 'day \u22127': -7, 'donor search': -45, 'day \u22123': -3,
-          'day +7': 7, 'day +14': 14, 'day +30': 30, 'day +100': 100, 'day +365': 365,
-          'every day, +7 to +60': 18, 'day of symptom onset': 21, 'day of rash': 23,
-          'onset day': 26, 'biopsy sign-out': 29, 'steroid start': 33, 'day systemic steroids start': 33,
-          'second-line start': 45, 'treatment start': 45, 'each taper decision': 120,
-          'each taper decision after +180': 200, 'therapy start': 130,
-          'pre-HCT / onset': 1, 'any': 60, 'perturbation experiment': 60, 'as parent task': 60, 'as parent': 60}
-missing = sorted({l for l in reg_full.landmark if l not in LAND_X})
-assert not missing, f'unmapped landmarks: {missing}'          # the figure must never silently default
-FAMS = list(reg.family.unique())
-FAM_Y = {f.split()[0]: len(FAMS) - 1 - i for i, f in enumerate(FAMS)}
+# ----------------------------------------------------------------------------- Figure 7: the shape of GvHD-Bench (a map of the tasks, and which ones the field can actually settle)
+BINS = ['pre-HCT\n(before day 0)', 'day +7\nto +30', 'onset /\ndiagnosis', 'treatment\nstart', 'day +100\nonward', 'any /\nresearch']
+FAMN = {'A': 'Pre-HCT planning', 'B': 'Early prognosis', 'C': 'Diagnosis and\nacute course', 'D': 'Treatment response',
+        'E': 'Chronic GvHD', 'F': 'Mechanism', 'G': 'Robustness'}
+def _bin(r):
+    f = r.family[0]
+    if f in 'FG': return 5
+    if r.id in ('C4', 'C5', 'D1', 'D2', 'D4'): return 3
+    if r.id in ('D3', 'E1', 'E2', 'E3', 'E4', 'E5'): return 4
+    return {'A': 0, 'B': 1, 'C': 2}[f]
+reg_full['bin'] = [_bin(r) for _, r in reg_full.iterrows()]
+reg_full['fam'] = [r.family[0] for _, r in reg_full.iterrows()]
 MARK = {'R1': 'o', 'R2': 's', 'R3': '^', 'R4': 'D'}
-fig, axes = plt.subplots(1, 2, figsize=(FULL, 3.1), gridspec_kw=dict(width_ratios=[2.0, 1], wspace=.26))
-ax = axes[0]
-def sx2(d): return np.sign(d) * np.log1p(abs(d))
-for fam_key in FAM_Y:
-    sub_f = reg_full[reg_full.family.str.startswith(fam_key)].copy()
-    sub_f['x'] = [sx2(LAND_X[l]) for l in sub_f.landmark]
-    sub_f = sub_f.sort_values('x').reset_index(drop=True)
-    # deterministic vertical offsets so co-located tasks never print on top of one another
-    offs, used = [], {}
-    for x in sub_f.x:
-        k = round(float(x), 2); n = used.get(k, 0); used[k] = n + 1
-        offs.append(.145 * n - .145 * (list(sub_f.x).count(x) - 1) / 2)
-    for (_, r), off in zip(sub_f.iterrows(), offs):
-        y = FAM_Y[fam_key] + off
-        powered = r.verdict == 'POWERED'
-        ax.plot(r.x, y, MARK[r.readiness], ms=3.9, mfc=PAL['aqua'] if powered else 'none',
-                mec=PAL['aqua'] if powered else PAL['orange'], mew=.9, zorder=3)
-        ax.annotate(r.id, (r.x, y), textcoords='offset points', xytext=(4.2, 0), fontsize=4.7,
-                    ha='left', va='center', color=PAL['ink2'])
-ax.axvline(0, color=PAL['ink'], lw=.8)
-ticks = [-45, -7, 0, 7, 14, 28, 100, 365]
-ax.set_xticks([sx2(t) for t in ticks]); ax.set_xticklabels([f'{t:+d}' if t else '0' for t in ticks])
-ax.set_yticks(list(FAM_Y.values()))
-ax.set_yticklabels([f.split(' ', 1)[0] + '  ' + f.split(' ', 1)[1] for f in FAMS], fontsize=5.6)
-ax.set_xlabel('landmark (day relative to graft infusion, signed-log)')
-ax.set_xlim(sx2(-82), sx2(900)); ax.set_ylim(-.5, len(FAM_Y) - .0); panel(ax, 'a', dx=-.165)
-hx = sx2(-66)
-for i, (k, lab) in enumerate([('R1', 'registry now'), ('R2', 'biobank'), ('R3', 'prospective'), ('R4', 'research')]):
-    ax.plot(hx, 2.00 - i * .22, MARK[k], ms=3.6, mfc=PAL['ink2'], mec=PAL['ink2'])
-    ax.text(hx + .20, 2.00 - i * .22, lab, fontsize=5.0, va='center', color=PAL['ink2'])
-ax.plot(hx, .92, 'o', ms=3.6, mfc=PAL['aqua'], mec=PAL['aqua'])
-ax.text(hx + .20, .92, 'powered', fontsize=5.0, va='center', color=PAL['aqua'], fontweight='bold')
-ax.plot(hx, .70, 'o', ms=3.6, mfc='none', mec=PAL['orange'], mew=.9)
-ax.text(hx + .20, .70, 'under-powered', fontsize=5.0, va='center', color=PAL['orange'], fontweight='bold')
-ax = axes[1]; ygrid(ax)
-need = reg_full.dropna(subset=['n to show +0.03'])
-ax.scatter(need['n to show +0.03'], need['n accessible (est.)'],
-           c=[PAL['aqua'] if v == 'POWERED' else PAL['orange'] for v in need.verdict], s=14, zorder=3)
-lim = [2e2, 3e5]
-ax.plot(lim, lim, color=PAL['ink'], lw=.8, ls='--')
-ax.text(4e3, 2.6e3, 'powered', fontsize=5.8, color=PAL['aqua'], fontweight='bold', rotation=45)
-ax.text(1.6e3, 6e3, 'under-powered', fontsize=5.8, color=PAL['orange'], fontweight='bold', rotation=45)
-seen = set()
-for _, r in need.sort_values('n accessible (est.)').iterrows():
-    if r.verdict == 'POWERED': continue
-    key = (round(math.log10(r['n to show +0.03']), 1), round(math.log10(r['n accessible (est.)']), 1))
-    dy = -1 - 5 * len([k for k in seen if k == key]); seen.add(key)
-    ax.annotate(r.id, (r['n to show +0.03'], r['n accessible (est.)']), textcoords='offset points',
-                xytext=(4, dy), fontsize=4.8, color=PAL['ink2'])
-ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xlim(*lim); ax.set_ylim(*lim)
-ax.set_xlabel('patients needed to show +0.03'); ax.set_ylabel('patients accessible'); panel(ax, 'b', dx=-.30)
+ROW, FPAD, SLOTS = .185, .13, 2                                             # inches per slot row; padding between families
+fam_rows = {f: max(int(np.ceil(len(reg_full[(reg_full.fam == f) & (reg_full.bin == b)]) / SLOTS)) for b in range(6)) for f in FAMN}
+Hin = sum(fam_rows.values()) * ROW + FPAD * (len(FAMN) - 1)
+FWIN, FHIN = FULL, Hin + 1.50
+fig = plt.figure(figsize=(FWIN, FHIN))
+L1, W1, L2, W2 = 1.42, 4.05, 6.05, 1.10
+axm = fig.add_axes([L1 / FWIN, .98 / FHIN, W1 / FWIN, Hin / FHIN]); axr = fig.add_axes([L2 / FWIN, .98 / FHIN, W2 / FWIN, Hin / FHIN])
+axm.set_xlim(0, 6); axm.set_ylim(Hin, 0)
+ymid, y0 = {}, 0.0
+for f in FAMN:
+    h = fam_rows[f] * ROW; ymid[f] = y0 + h / 2
+    for b in range(6):
+        sub = reg_full[(reg_full.fam == f) & (reg_full.bin == b)].sort_values('id')
+        for k, (_, r) in enumerate(sub.iterrows()):
+            x = b + .075 + (k % SLOTS) * .5; y = y0 + (k // SLOTS + .5) * ROW
+            v = r.verdict
+            kw = dict(mfc=PAL['aqua'], mec=PAL['aqua']) if v == 'POWERED' else (dict(mfc='none', mec=PAL['orange']) if v == 'UNDER-POWERED' else dict(mfc=PAL['grey2'], mec=PAL['grey']))
+            axm.plot(x, y, MARK[r.readiness], ms=4.4, mew=1.0, **kw, zorder=3)
+            axm.text(x + .085, y, r.id, fontsize=6.4, va='center', ha='left', color=PAL['ink'])
+    y0 += h + FPAD
+    if f != 'G': axm.axhline(y0 - FPAD / 2, color=PAL['grid'], lw=.5)
+for b in range(1, 6): axm.axvline(b, color=PAL['grid'], lw=.5)
+axm.set_yticks([ymid[f] for f in FAMN]); axm.set_yticklabels([f'{f}  {FAMN[f]}' for f in FAMN]); axm.tick_params(axis='y', length=0)
+axm.xaxis.tick_top(); axm.set_xticks(np.arange(6) + .5); axm.set_xticklabels(BINS); axm.tick_params(axis='x', length=0)
+for sp in ('left', 'bottom', 'right', 'top'): axm.spines[sp].set_visible(False)
+axm.annotate('a', (0, 1), xycoords='axes fraction', xytext=(-1.3 * 72, 32), textcoords='offset points', fontsize=9, fontweight='bold')
+# (b) accessible / needed, for the 26 tasks that have a numeric requirement
+need = reg_full.dropna(subset=['n to show +0.03']).copy()
+need['req'] = need[['n to develop (50-param)', 'n to show +0.03']].astype(float).max(axis=1)
+need['ratio'] = need['n accessible (est.)'] / need['req']
+need = need.sort_values('ratio').reset_index(drop=True)
+axr.barh(np.arange(len(need)), need.ratio - 1, left=1, height=.68, zorder=3,
+         color=[PAL['aqua'] if v == 'POWERED' else PAL['orange'] for v in need.verdict])
+axr.set_xscale('log'); axr.set_xlim(max(need.ratio.min() * .6, 1e-3), need.ratio.max() * 1.8); axr.axvline(1, color=PAL['ink'], lw=.8, zorder=4)
+axr.set_yticks(np.arange(len(need))); axr.set_yticklabels(need.id); axr.set_ylim(len(need) - .4, -.6)
+_tk = [t for t in (.01, .1, 1, 10, 100) if axr.get_xlim()[0] <= t <= axr.get_xlim()[1]]
+axr.set_xticks(_tk); axr.set_xticklabels([f'{t:g}' for t in _tk]); axr.minorticks_off()
+axr.tick_params(axis='y', length=0); ygrid(axr, 'x')
+axr.set_xlabel('accessible ÷ needed\n(patients, to show +0.03)')
+axr.annotate('b', (0, 1), xycoords='axes fraction', xytext=(-.2 * 72, 32), textcoords='offset points', fontsize=9, fontweight='bold')
+fig.legend([plt.Line2D([], [], marker=m, ls='none', ms=4.6, mfc=PAL['ink2'], mec=PAL['ink2']) for m in MARK.values()] +
+           [plt.Line2D([], [], marker='o', ls='none', ms=4.6, mfc=PAL['aqua'], mec=PAL['aqua']),
+            plt.Line2D([], [], marker='o', ls='none', ms=4.6, mfc='none', mec=PAL['orange'], mew=1.0),
+            plt.Line2D([], [], marker='o', ls='none', ms=4.6, mfc=PAL['grey2'], mec=PAL['grey'])],
+           ['R1 runs on a registry now', 'R2 needs an existing biobank', 'R3 needs prospective collection', 'R4 research only',
+            'powered', 'under-powered', 'not a single-AUROC task'], ncol=4, loc='lower center', bbox_to_anchor=(.5, 0.0),
+           columnspacing=1.5, handletextpad=.3, labelspacing=.45)
 finish(fig, 7, 'gvhd_bench_structure',
-       'GvHD-Bench v1.0. (a) The 38 tasks by family and by the landmark at which the prediction is made; '
-       'marker shape is data readiness and fill is the powered verdict. Most of the benchmark sits in the '
-       'first 100 days, where the decisions are. (b) Accessible patients against the number needed to '
-       'demonstrate a +0.03 AUROC gain over the task baseline: points below the diagonal are tasks the field '
-       'cannot currently settle, and they are labelled rather than omitted.')
+       'GvHD-Bench v1.0. (a) The 38 tasks, grouped by family and by the landmark at which the prediction is made. Marker '
+       'shape is data readiness and colour is the powered verdict; tasks that are not a single-AUROC comparison (donor ranking, '
+       'counterfactual contrasts, representation and robustness audits) are grey. (b) For the 26 tasks with a numeric '
+       'requirement: patients accessible divided by patients needed to demonstrate a +0.03 AUROC gain over the task '
+       'baseline. Bars left of 1 are tasks the field cannot currently settle; they are labelled, not omitted.')
 ''')
 
 
@@ -685,81 +681,63 @@ slope = np.polyfit(cal.predicted, cal.observed_AJ, 1)
 nbc = net_benefit(y_full, P, np.linspace(.05, .6, 23))
 
 # ----------------------------------------------------------------------------- Figure 8: the harness executing task B1 on the [SIM] cohort
-ARM_STYLE = {
- 'clinical baseline (registry covariates)':   (PAL['seq'][0], 'clinical'),
- 'clinical + MAP-like biomarkers':            (PAL['seq'][1], '+ biomarkers'),
- 'timeline model (clinical + day-7 state)':   (PAL['seq'][2], '+ day-7 state'),
- 'full (clinical + day-7 + biomarkers)':      (PAL['seq'][3], 'full model'),
- 'confounder-only (centre + era)':            (PAL['grey'],   'confounder\nonly'),
- 'LEAKING pipeline (adds steroid order d+5)': (PAL['bad'],    'LEAKING\n(excluded)'),
+ARM_STYLE = {   # key -> (colour, two-line axis label, one-line label)
+ 'clinical baseline (registry covariates)':   (PAL['seq'][0], 'clinical',            'clinical'),
+ 'clinical + MAP-like biomarkers':            (PAL['seq'][1], 'clinical\n+ MAP',      'clinical + MAP'),
+ 'timeline model (clinical + day-7 state)':   (PAL['seq'][2], 'clinical\n+ day 7',    'clinical + day 7'),
+ 'full (clinical + day-7 + biomarkers)':      (PAL['seq'][3], 'full\nmodel',          'full model'),
+ 'confounder-only (centre + era)':            (PAL['grey'],   'centre + era\nonly',   'centre + era only'),
+ 'LEAKING pipeline (adds steroid order d+5)': (PAL['bad'],    'leaking\n(excluded)',  'leaking (excluded)'),
 }
 order = [a for a in ARM_STYLE if a in piv.columns]
-fig = plt.figure(figsize=(FULL, 4.6))
-gs = fig.add_gridspec(2, 3, height_ratios=[1.15, 1], hspace=.70, wspace=.52)
-# (a) per-centre spread
-ax = fig.add_subplot(gs[0, :2]); ygrid(ax)
+FWIN, FHIN = FULL, 5.0
+fig = plt.figure(figsize=(FWIN, FHIN))
+def A(l, b, w, h): return fig.add_axes([l / FWIN, b / FHIN, w / FWIN, h / FHIN])
+axa = A(1.05, 2.95, 3.25, 1.70); axb = A(5.55, 2.95, 1.55, 1.70)
+axc = A(0.95, 0.60, 1.55, 1.50); axd = A(3.35, 0.60, 1.55, 1.50); axe = A(5.75, 0.60, 1.35, 1.50)
+ax = axa; ygrid(ax)                                                    # (a) per-centre spread
 for i, a in enumerate(order):
-    c, lab = ARM_STYLE[a]; v = piv[a].dropna().values
-    ax.scatter(np.full(len(v), i) + np.random.default_rng(i).uniform(-.14, .14, len(v)), v, s=7,
-               color=c, alpha=.75, lw=0, zorder=3)
-    ax.plot([i - .3, i + .3], [v.mean()] * 2, color=PAL['ink'], lw=1.3, zorder=4)
-    ax.text(i, 1.005, f'{v.mean():.3f}', ha='center', fontsize=6.0, fontweight='bold', color=PAL['ink'])
+    c = ARM_STYLE[a][0]; v = piv[a].dropna().values
+    ax.scatter(np.full(len(v), i) + np.random.default_rng(i).uniform(-.15, .15, len(v)), v, s=8, color=c, alpha=.8, lw=0, zorder=3)
+    ax.plot([i - .30, i + .30], [v.mean()] * 2, color=PAL['ink'], lw=1.4, zorder=4)
+    ax.text(i, 1.03, f'{v.mean():.3f}', ha='center', va='bottom', fontsize=6.5, fontweight='bold')
 ax.axhline(.5, color=PAL['ink2'], ls='--', lw=.6)
-ax.set_xticks(range(len(order))); ax.set_xticklabels([ARM_STYLE[a][1] for a in order], fontsize=5.9)
-ax.set_ylabel('IPCW td-AUROC at day +100\n(one point per held-out centre)'); ax.set_ylim(.42, 1.04)
-panel(ax, 'a', dx=-.085)
-# (b) delta vs clinical baseline, bootstrapped over centres
-ax = fig.add_subplot(gs[0, 2]); ygrid(ax, 'x')
-dd_ = delta.set_index('arm').reindex([a for a in order if a in delta.arm.values])
-ypos = np.arange(len(dd_))
+ax.set_xticks(range(len(order))); ax.set_xticklabels([ARM_STYLE[a][1] for a in order]); ax.set_xlim(-.55, len(order) - .45)
+ax.set_ylim(.42, 1.08); ax.set_yticks([.5, .6, .7, .8, .9, 1.0]); ax.set_ylabel('IPCW td-AUROC at day +100\n(one point per held-out centre)'); panel(ax, 'a')
+ax = axb; ygrid(ax, 'x')                                               # (b) difference from the clinical baseline
+dd_ = delta.set_index('arm').reindex([a for a in order if a in delta.arm.values]); ypos = np.arange(len(dd_))
 for y, (a, r) in zip(ypos, dd_.iterrows()):
-    c = ARM_STYLE[a][0]
-    ax.plot([r.lo, r.hi], [y, y], color=c, lw=1.6, solid_capstyle='round')
-    ax.plot(r.delta_vs_clinical, y, 'o', color=c, ms=4.0)
-ax.axvline(0, color=PAL['ink'], lw=.7)
-ax.set_yticks(ypos); ax.set_yticklabels([ARM_STYLE[a][1].replace('\n', ' ') for a in dd_.index], fontsize=5.9)
-ax.set_xlabel('Δ IPCW td-AUROC vs clinical\n[centre bootstrap 95% CI]'); ax.invert_yaxis(); panel(ax, 'b', dx=-.62)
-# (c) calibration against Aalen-Johansen
-ax = fig.add_subplot(gs[1, 0]); ygrid(ax)
+    c = ARM_STYLE[a][0]; ax.plot([r.lo, r.hi], [y, y], color=c, lw=1.8, solid_capstyle='round'); ax.plot(r.delta_vs_clinical, y, 'o', color=c, ms=4.2, zorder=4)
+ax.axvline(0, color=PAL['ink'], lw=.8)
+ax.set_yticks(ypos); ax.set_yticklabels([ARM_STYLE[a][2] for a in dd_.index]); ax.invert_yaxis(); ax.tick_params(axis='y', length=0)
+ax.set_xlim(-.30, .32); ax.set_xlabel('Δ IPCW td-AUROC vs clinical\n(centre-bootstrap 95% CI)'); panel(ax, 'b')
+ax = axc; ygrid(ax)                                                    # (c) calibration against Aalen-Johansen
 mx = float(max(cal.predicted.max(), cal.observed_AJ.max())) * 1.12
 ax.plot([0, mx], [0, mx], color=PAL['ink2'], ls='--', lw=.7)
-ax.plot(cal.predicted, cal.observed_AJ, 'o-', color=PAL['seq'][3], ms=3.6, lw=1.3)
-ax.set_xlabel('predicted risk (decile mean)'); ax.set_ylabel('observed Aalen–Johansen CIF')
-ax.set_xlim(0, mx); ax.set_ylim(0, mx)
-ax.text(.03, .97, f'slope {slope[0]:.2f}\nintercept {slope[1]:+.3f}', transform=ax.transAxes,
-        fontsize=6.0, va='top', color=PAL['ink'])
-panel(ax, 'c', dx=-.34)
-# (d) decision curve
-ax = fig.add_subplot(gs[1, 1]); ygrid(ax)
-ax.plot(nbc.threshold, nbc.model, color=PAL['seq'][3], lw=1.5)
-ax.plot(nbc.threshold, nbc.treat_all, color=PAL['grey'], lw=1.2, ls='--')
-ax.axhline(0, color=PAL['ink2'], lw=.7)
-dlabel(ax, nbc.threshold.iloc[len(nbc) // 3], nbc.model.iloc[len(nbc) // 3], 'full model', PAL['seq'][3], dy=6, size=6.0)
-dlabel(ax, nbc.threshold.iloc[2], nbc.treat_all.iloc[2], 'treat all', PAL['grey'], dy=-7, size=6.0)
-ax.text(.97, .06, 'treat none', transform=ax.transAxes, fontsize=6.0, ha='right', color=PAL['ink2'])
+ax.plot(cal.predicted, cal.observed_AJ, 'o-', color=PAL['seq'][3], ms=3.8, lw=1.3, zorder=3)
+ax.set_xlabel('predicted risk (decile mean)'); ax.set_ylabel('observed Aalen–Johansen\nincidence'); ax.set_xlim(0, mx); ax.set_ylim(0, mx)
+ax.text(.04, .96, f'slope {slope[0]:.2f}\nintercept {slope[1]:+.3f}', transform=ax.transAxes, fontsize=6.5, va='top'); panel(ax, 'c')
+ax = axd; ygrid(ax)                                                    # (d) decision curve
+ax.plot(nbc.threshold, nbc.model, color=PAL['seq'][3], lw=1.6, label='full model')
+ax.plot(nbc.threshold, nbc.treat_all, color=PAL['grey'], lw=1.2, ls='--', label='treat all')
+ax.axhline(0, color=PAL['ink2'], lw=.7, label='treat none')
 ax.set_xlabel('threshold probability'); ax.set_ylabel('net benefit')
-ax.set_ylim(min(-.03, nbc.model.min() * 1.1), max(.02, nbc.model.max() * 1.3)); panel(ax, 'd', dx=-.34)
-# (e) the leakage canary
-ax = fig.add_subplot(gs[1, 2]); ygrid(ax)
-lk = ['full (clinical + day-7 + biomarkers)', 'LEAKING pipeline (adds steroid order d+5)']
-vals = [summ.loc[a, 'mean_ipcw_auroc'] for a in lk]
-ax.bar([0, 1], vals, color=[ARM_STYLE[a][0] for a in lk], width=.56)
-for i, v in enumerate(vals): ax.text(i, v + .012, f'{v:.3f}', ha='center', fontsize=6.2, fontweight='bold')
-ax.annotate('', xy=(.5, vals[1]), xytext=(.5, vals[0]),
-            arrowprops=dict(arrowstyle='<->', color=PAL['bad'], lw=.9))
-ax.text(.5, .555, f'+{vals[1]-vals[0]:.3f} from one\nleaking feature', fontsize=5.8,
-        color=PAL['bad'], va='bottom', ha='center', fontweight='bold')
-ax.set_xticks([0, 1]); ax.set_xticklabels(['audited\ninput set', 'leak\nincluded'], fontsize=6.0)
-ax.set_ylabel('mean IPCW td-AUROC'); ax.set_ylim(.5, 1.10); ax.set_xlim(-.55, 1.55); panel(ax, 'e', dx=-.36)
+ax.set_ylim(min(-.03, nbc.model.min() * 1.1), max(.02, nbc.model.max() * 1.15)); ax.legend(loc='upper right', labelspacing=.3); panel(ax, 'd')
+ax = axe; ygrid(ax)                                                    # (e) the leakage canary
+lk = ['full (clinical + day-7 + biomarkers)', 'LEAKING pipeline (adds steroid order d+5)']; vals = [summ.loc[a, 'mean_ipcw_auroc'] for a in lk]
+ax.bar([0, 1], vals, color=[ARM_STYLE[a][0] for a in lk], width=.62, zorder=3)
+for i, v in enumerate(vals): ax.text(i, v + .012, f'{v:.3f}', ha='center', va='bottom', fontsize=6.5, fontweight='bold')
+ax.annotate('', xy=(1.42, vals[1]), xytext=(1.42, vals[0]), arrowprops=dict(arrowstyle='<->', color=PAL['bad'], lw=.9, shrinkA=0, shrinkB=0))
+ax.text(1.52, (vals[0] + vals[1]) / 2, f'+{vals[1] - vals[0]:.3f}\nfrom one\nleaking\nfeature', fontsize=6.4, color=PAL['bad'], va='center', ha='left', fontweight='bold')
+ax.set_xticks([0, 1]); ax.set_xticklabels(['audited\ninputs', 'leak\nincluded']); ax.set_xlim(-.5, 2.6)
+ax.set_ylabel('mean IPCW td-AUROC'); ax.set_ylim(.5, 1.06); panel(ax, 'e')
 finish(fig, 8, 'harness_task_B1',
-       '[SIM] The GvHD-Bench harness executing task B1 (grade II-IV aGvHD by day +100 from the day +7 state) '
-       'on a simulated 24-centre cohort. (a) Leave-centre-out IPCW time-dependent AUROC, one point per '
-       'held-out centre; the pooled mean alone would hide this spread. (b) Difference from the clinical '
-       'baseline with a centre-level bootstrap interval. (c) Calibration against the Aalen-Johansen '
-       'cumulative incidence, which is the competing-risk analogue of a calibration plot. (d) Decision-curve '
-       'net benefit against treat-all and treat-none. (e) The leakage canary: adding one planted '
-       'treatment-proxy feature inflates the headline number, and the audit flags it before any model is fitted. '
-       'Effect sizes are properties of the simulation, not of patients.')
+       '[SIM] The GvHD-Bench harness executing task B1 (grade II-IV aGvHD by day +100 from the day +7 state) on a simulated '
+       '24-centre cohort. (a) Leave-centre-out IPCW time-dependent AUROC, one point per held-out centre, with the mean '
+       'printed above; the pooled mean alone would hide this spread. (b) Difference from the clinical baseline with a '
+       'centre-level bootstrap interval. (c) Calibration against the Aalen-Johansen cumulative incidence, the competing-risk '
+       'analogue of a calibration plot. (d) Decision-curve net benefit. (e) The leakage canary: one planted treatment-proxy '
+       'feature inflates the headline number, and the audit flags it before any model is fitted. Effect sizes belong to the simulation.')
 display(md_table(cal.round(3)))
 ''')
 

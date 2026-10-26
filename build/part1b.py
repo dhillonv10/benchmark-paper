@@ -47,37 +47,35 @@ LAND = [  # id, landmark, assumed f, published-performance range, source note
     ('B2/B4', 'day +14\n(+ reconstitution)',  .52, (.70, .76), 'biomarker + clinical'),
     ('C4/C5', 'GvHD onset\n(staging, biopsy)', .70, (.65, .75), 'grade + biomarkers at onset'),
     ('C1/C7', 'onset, diagnosis\n(tissue in hand)', .88, (.80, .90), 'tissue transcriptome / histology')]
-fig, axes = plt.subplots(1, 2, figsize=(FULL, 2.6), gridspec_kw=dict(width_ratios=[1.45, 1], wspace=.3))
-ax = axes[0]; ygrid(ax)
-ax.plot(FS, ceil_curve[.35], color=PAL['ink'], lw=1.6)
-ax.plot(FS, ceil_curve[.15], color=PAL['grey'], lw=1.2, ls='--')
-i_lab = int(len(FS) * .38)
-dlabel(ax, FS[i_lab], ceil_curve[.35][i_lab], 'ceiling, prevalence 0.35', PAL['ink'], dx=3, dy=-8, size=6.2)
-dlabel(ax, FS[i_lab], ceil_curve[.15][i_lab], 'prevalence 0.15', PAL['grey'], dx=3, dy=7, size=6.2)
-for (tid, lab, f, (plo, phi), _), c in zip(LAND, (PAL['seq'][0], PAL['seq'][1], PAL['seq'][2], PAL['orange'], PAL['aqua'])):
+fig = plt.figure(figsize=(FULL, 3.2))
+gs = fig.add_gridspec(1, 2, width_ratios=[1.6, 1], left=.075, right=.975, bottom=.165, top=.90, wspace=.34)
+ax = fig.add_subplot(gs[0, 0]); ygrid(ax)
+ax.plot(FS, ceil_curve[.35], color=PAL['ink'], lw=1.6, label='ceiling, prevalence 0.35')
+ax.plot(FS, ceil_curve[.15], color=PAL['grey'], lw=1.2, ls='--', label='ceiling, prevalence 0.15')
+LC = (PAL['seq'][0], PAL['seq'][1], PAL['seq'][2], PAL['orange'], PAL['aqua'])
+for (tid, lab, f, (plo, phi), _), c in zip(LAND, LC):
     cl = ceiling_auroc(f, .35)
-    ax.plot([f, f], [plo, cl], color=c, lw=3.2, solid_capstyle='butt', alpha=.95)
-    ax.plot(f, cl, 'o', color=c, ms=4.2, zorder=4)
-    ax.plot(f, phi, '_', color=c, ms=7, mew=1.6, zorder=4)
-    ax.text(f, .505, tid, fontsize=6.0, ha='center', va='bottom', color=c, fontweight='bold', rotation=90)
-ax.set_xlabel('fraction of the causal chain observable at the landmark, $f_L$')
-ax.set_ylabel('AUROC'); ax.set_ylim(.49, 1.0); ax.set_xlim(0, 1.02); panel(ax, 'a', dx=-.12)
-ax.text(.03, .985, 'dot = ceiling at that $f_L$\nbar = gap to what published models achieve',
-        transform=ax.transAxes, fontsize=5.9, va='top', ha='left', color=PAL['ink2'])
-ax = axes[1]; ygrid(ax)
-ax.barh(np.arange(len(inv)), inv.iloc[:, 1], color=PAL['seq'][2], height=.62)
-for i, (t, f) in enumerate(zip(inv.iloc[:, 0], inv.iloc[:, 1])):
-    ax.text(f + .015, i, f'{f:.2f}', va='center', fontsize=6.4, color=PAL['ink'])
+    ax.plot([f, f], [plo, phi], color=c, lw=3.6, solid_capstyle='butt', zorder=3)          # what is published today
+    ax.plot([f, f], [phi, cl], color=PAL['ink'], lw=.8, zorder=3)                           # the headroom
+    ax.plot(f, cl, 'o', color=PAL['ink'], ms=4.0, zorder=4)
+    ax.text(f, .505, tid, fontsize=6.4, ha='center', va='bottom', color=PAL['ink2'], fontweight='bold', rotation=90)
+ax.set_xlabel('fraction of the causal chain observable at the landmark, $f_L$'); ax.set_ylabel('AUROC')
+ax.set_ylim(.49, 1.0); ax.set_xlim(0, 1.02)
+hs, ls_ = ax.get_legend_handles_labels()
+hs += [plt.Line2D([], [], color=PAL['grey'], lw=3.6), plt.Line2D([], [], color=PAL['ink'], lw=.8, marker='o', ms=3.6)]
+ls_ += ['published models today', 'headroom to the ceiling']
+ax.legend(hs, ls_, loc='upper left', labelspacing=.3); panel(ax, 'a')
+ax = fig.add_subplot(gs[0, 1]); ygrid(ax, 'x')
+ax.barh(np.arange(len(inv)), inv.iloc[:, 1], color=PAL['seq'][2], height=.62, zorder=3)
+for i, f in enumerate(inv.iloc[:, 1]): ax.text(f + .02, i, f'{f:.2f}', va='center', fontsize=6.5)
 ax.set_yticks(np.arange(len(inv))); ax.set_yticklabels([f'{t:.2f}' for t in inv.iloc[:, 0]])
-ax.set_ylabel('target AUROC'); ax.set_xlabel('required $f_L$'); ax.set_xlim(0, 1.05); panel(ax, 'b', dx=-.30)
-ax.invert_yaxis()
+ax.set_ylabel('target AUROC'); ax.set_xlabel('required $f_L$'); ax.set_xlim(0, 1.0); ax.invert_yaxis(); panel(ax, 'b')
 finish(fig, 3, 'predictability_ceiling',
-       'What is predictable, and when. (a) The best achievable AUROC rises with the fraction of the '
-       'outcome-determining causal chain that is observable at the prediction time. Landmarks are placed at '
-       'assumed values of that fraction [SIM assumption], with the bar showing the distance from what published '
-       'models achieve to the ceiling at that point. (b) Inverting the curve: the share of the causal chain a '
-       'model must observe to reach a given AUROC. Reaching 0.85 pre-transplant is not a modelling problem; '
-       'it would require observing information that does not exist yet at that time.')
+       'What is predictable, and when. (a) The best achievable AUROC rises with the fraction of the outcome-determining '
+       'causal chain that is observable at prediction time. Coloured bars: the AUROC range of published models at each '
+       'landmark; thin line and dot: headroom to the ceiling at the assumed fraction [SIM assumption]. Landmarks: '
+       'A1/A2 day -7; B1 day +7; B2/B4 day +14; C4/C5 GvHD onset; C1/C7 diagnosis with tissue in hand. (b) The inverse: the '
+       'share of the causal chain a model must observe to reach a given AUROC.')
 display(md_table(inv))
 ''')
 

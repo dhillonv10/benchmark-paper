@@ -102,6 +102,11 @@ code(r'''
 # ----------------------------------------------------------------------------- publication figure system (one place; every figure in this paper uses it)
 FIGDIR = 'figures'; os.makedirs(FIGDIR, exist_ok=True)
 import matplotlib as mpl
+from matplotlib.text import Text as _MplText
+from matplotlib.path import Path as _MplPath
+from matplotlib.transforms import Bbox as _Bbox
+from matplotlib.patches import Rectangle as _Rect
+from matplotlib.collections import PathCollection as _PathColl
 # Colours: a validated categorical palette (all-pairs colour-vision-deficiency separation checked), a one-hue
 # sequential ramp for ordered/nested model families, and a reserved status colour used only for "this is wrong".
 PAL = dict(blue='#2a78d6', orange='#eb6834', aqua='#1baf7a', violet='#6250d6',
@@ -109,11 +114,12 @@ PAL = dict(blue='#2a78d6', orange='#eb6834', aqua='#1baf7a', violet='#6250d6',
            bad='#d03b3b',                                          # status: critical (always carries a label too)
            ink='#0b0b0b', ink2='#52514e', grid='#d8d7d2', grey='#8c8c8c', grey2='#bdbcb7', surface='#ffffff')
 SINGLE, MID, FULL = 3.5, 5.2, 7.2                                  # figure widths in inches (single / 1.5 / double column)
+FONT_STACK = [os.environ['ALLOFM_FONT']] if os.environ.get('ALLOFM_FONT') else ['Liberation Sans', 'Arial', 'Helvetica', 'DejaVu Sans']
 mpl.rcParams.update({
     'figure.facecolor': PAL['surface'], 'axes.facecolor': PAL['surface'], 'savefig.facecolor': PAL['surface'],
-    'font.family': 'sans-serif', 'font.sans-serif': ['Liberation Sans', 'DejaVu Sans'],
-    'font.size': 7.2, 'axes.labelsize': 7.6, 'axes.titlesize': 7.6, 'xtick.labelsize': 6.8, 'ytick.labelsize': 6.8,
-    'legend.fontsize': 6.8, 'legend.frameon': False, 'legend.handlelength': 1.5, 'legend.borderpad': .2,
+    'font.family': 'sans-serif', 'font.sans-serif': FONT_STACK,
+    'font.size': 7.0, 'axes.labelsize': 7.4, 'axes.titlesize': 7.4, 'xtick.labelsize': 6.6, 'ytick.labelsize': 6.6,
+    'legend.fontsize': 6.5, 'legend.frameon': False, 'legend.handlelength': 1.6, 'legend.borderpad': .2,
     'axes.labelcolor': PAL['ink'], 'text.color': PAL['ink'], 'xtick.color': PAL['ink2'], 'ytick.color': PAL['ink2'],
     'axes.edgecolor': PAL['ink2'], 'axes.linewidth': .6, 'axes.spines.top': False, 'axes.spines.right': False,
     'xtick.direction': 'out', 'ytick.direction': 'out', 'xtick.major.width': .6, 'ytick.major.width': .6,
@@ -121,26 +127,119 @@ mpl.rcParams.update({
     'grid.color': PAL['grid'], 'grid.linewidth': .5, 'axes.grid': False, 'figure.dpi': 140, 'savefig.dpi': 600,
     'savefig.bbox': 'tight', 'savefig.pad_inches': .02, 'pdf.fonttype': 42, 'ps.fonttype': 42})
 
+# ------------------------------------------------------------------ layout gate: nothing ships if text collides
+MIN_FONT_PT = 6.0
+STRICT_FIGS = os.environ.get('ALLOFM_STRICT_FIGS', '0') == '1'    # build sets this to 1; reviewers' runs only warn
+
+def _drawn_texts(fig):
+    """Draw once and record every Text artist that was actually drawn (hidden / off-view ticks excluded).
+    Hooks Text.draw itself: the renderer only receives a handle to single-line text, so hooking the
+    renderer would silently skip every multi-line label."""
+    fig.canvas.draw(); rend = fig.canvas.get_renderer(); seen, orig = {}, _MplText.draw
+    def rec(self, renderer):
+        if self.get_visible() and str(self.get_text()).strip(): seen[id(self)] = self
+        return orig(self, renderer)
+    _MplText.draw = rec
+    try: fig.draw(rend)
+    finally: _MplText.draw = orig
+    return rend, list(seen.values())
+
+def _poly(t, rend):
+    """Text outline in display pixels as a (possibly rotated) rectangle; the text-only extent, never the arrow."""
+    bb = _MplText.get_window_extent(t, rend); rot = float(t.get_rotation() or 0)
+    if rot % 90 == 0 or bb.width == 0: 
+        return np.array([[bb.x0, bb.y0], [bb.x1, bb.y0], [bb.x1, bb.y1], [bb.x0, bb.y1]]), bb
+    t.set_rotation(0); b0 = _MplText.get_window_extent(t, rend); t.set_rotation(rot)
+    cx, cy, a = (bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2, np.deg2rad(rot)
+    R = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+    pts = np.array([[-b0.width / 2, -b0.height / 2], [b0.width / 2, -b0.height / 2],
+                    [b0.width / 2, b0.height / 2], [-b0.width / 2, b0.height / 2]])
+    return pts @ R.T + np.array([cx, cy]), bb
+
+def _sat(P, Q, tol):
+    """Separating-axis test for two convex polygons; True only if they overlap by more than `tol` pixels."""
+    for poly in (P, Q):
+        for i in range(len(poly)):
+            e = poly[(i + 1) % len(poly)] - poly[i]; n = np.array([-e[1], e[0]]); nn = np.linalg.norm(n)
+            if nn == 0: continue
+            n = n / nn; p, q = P @ n, Q @ n
+            if p.max() <= q.min() + tol or q.max() <= p.min() + tol: return False
+    return True
+
+def layout_report(fig, tol=1.0):
+    """Every way in which text can be wrong: text on text, text on a marker / line / bar, text that is too small."""
+    rend, texts = _drawn_texts(fig); geo = [(t, *_poly(t, rend)) for t in texts]; bad = []
+    label = lambda t: repr(t.get_text().replace('\n', ' ')[:34])
+    for i in range(len(geo)):                                              # 1. text on text
+        for j in range(i + 1, len(geo)):
+            if _sat(geo[i][1], geo[j][1], tol): bad.append(('text/text', label(geo[i][0]), label(geo[j][0])))
+    pts, segs, rects = [], [], []                                          # 2. text on data ink (clipped to what is visible)
+    for ax in fig.axes:
+        if not ax.axison: continue
+        vis = ax.bbox
+        for ln in ax.lines:
+            if not ln.get_visible(): continue
+            xy = ln.get_xydata()
+            if len(xy) == 0: continue
+            d = ln.get_transform().transform(xy)
+            if ln.get_marker() not in (None, 'None', '', ' '):
+                r = (ln.get_markersize() or 0) * fig.dpi / 144 + 1
+                pts += [(p, r, 'marker') for p in d if vis.x0 - r <= p[0] <= vis.x1 + r and vis.y0 - r <= p[1] <= vis.y1 + r]
+            if ln.get_linestyle() not in ('None', '', ' ', None) and len(d) >= 2:
+                path = _MplPath(d)
+                if ln.get_clip_on(): path = path.clip_to_bbox(vis)
+                if len(path.vertices) >= 2: segs.append((path, 'line'))
+        for coll in ax.collections:
+            if isinstance(coll, _PathColl) and coll.get_visible() and len(coll.get_offsets()):
+                d = coll.get_offset_transform().transform(coll.get_offsets()); sz = coll.get_sizes()
+                r = (np.sqrt(sz.max()) if len(sz) else 6) * fig.dpi / 144 + 1
+                pts += [(p, r, 'marker') for p in d if vis.x0 - r <= p[0] <= vis.x1 + r and vis.y0 - r <= p[1] <= vis.y1 + r]
+        for p in ax.patches:
+            if isinstance(p, _Rect) and p.get_visible():
+                b = p.get_window_extent()
+                if p.get_clip_on(): b = _Bbox.intersection(b, vis)
+                if b is not None and b.width > 1.5 and b.height > 1.5: rects.append((b, 'bar'))
+    for t, poly, bb in geo:
+        if getattr(t, '_ok_overlap', False): continue
+        for p, r, kind in pts:
+            if bb.x0 - r < p[0] < bb.x1 + r and bb.y0 - r < p[1] < bb.y1 + r: bad.append((f'text/{kind}', label(t), '')); break
+        tb = _Bbox([[bb.x0 + 1, bb.y0 + 1], [bb.x1 - 1, bb.y1 - 1]])
+        for path, kind in segs:
+            if path.intersects_bbox(tb, filled=False): bad.append((f'text/{kind}', label(t), '')); break
+        for b, kind in rects:
+            if min(bb.x1, b.x1) - max(bb.x0, b.x0) > 1.5 and min(bb.y1, b.y1) - max(bb.y0, b.y0) > 1.5:
+                bad.append((f'text/{kind}', label(t), '')); break
+    small = sorted({(round(t.get_fontsize(), 1), label(t)) for t, _, _ in geo if t.get_fontsize() < MIN_FONT_PT - 1e-6})
+    return dict(n_text=len(geo), collisions=bad, too_small=small, min_pt=min(t.get_fontsize() for t, _, _ in geo))
+
 FIGS = {}
-def panel(ax, letter, dx=-.085, dy=1.055):
-    """Bold panel letter, placed in axes coordinates (journals want a, b, c)."""
-    ax.text(dx, dy, letter, transform=ax.transAxes, fontsize=8.6, fontweight='bold', va='top', ha='left', color=PAL['ink'])
+def panel(ax, letter, dx=None, dy=None):
+    """Bold panel letter above the top-left corner of the axes (dx, dy kept for old call sites; ignored)."""
+    ax.annotate(letter, (0, 1), xycoords='axes fraction', xytext=(0, 3), textcoords='offset points',
+                ha='left', va='bottom', fontsize=9, fontweight='bold', color=PAL['ink'], annotation_clip=False)
 
 def ygrid(ax, axis='y'):
     ax.set_axisbelow(True); ax.grid(axis=axis, color=PAL['grid'], lw=.5)
 
 def finish(fig, num, slug, caption):
-    """Save one figure as vector PDF + 600-dpi PNG, register it, and show it."""
+    """Gate, then save one figure as vector PDF + 600-dpi PNG, register it, and show it."""
+    rep = layout_report(fig)
+    status = 'PASS' if not rep['collisions'] and not rep['too_small'] else 'FAIL'
+    print(f"[layout {status}] Fig {num}: {rep['n_text']} text items, {len(rep['collisions'])} collisions, "
+          f"{len(rep['too_small'])} below {MIN_FONT_PT:g} pt (smallest {rep['min_pt']:.1f} pt)")
+    for k, a, b in rep['collisions']: print(f'    {k}: {a} {"vs " + b if b else ""}')
+    for pt, s in rep['too_small']: print(f'    too small ({pt} pt): {s}')
+    if status == 'FAIL' and STRICT_FIGS: raise RuntimeError(f'Fig {num} failed the layout gate')
     base = os.path.join(FIGDIR, f'Fig{num:02d}_{slug}')
     for ext in ('pdf', 'png'): fig.savefig(f'{base}.{ext}')
-    FIGS[f'Fig {num}'] = dict(slug=slug, caption=caption, files=[f'{base}.pdf', f'{base}.png'])
+    FIGS[f'Fig {num}'] = dict(slug=slug, caption=caption, files=[f'{base}.pdf', f'{base}.png'], layout=status)
     plt.show(); print(f'[saved] {base}.pdf  +  {base}.png')
 
-def dlabel(ax, x, y, text, color, dx=4, dy=0, ha='left', va='center', size=6.6, weight='bold'):
+def dlabel(ax, x, y, text, color, dx=4, dy=0, ha='left', va='center', size=6.5, weight='bold'):
     """Direct series label (used instead of, or alongside, a legend: identity is never colour-alone)."""
     ax.annotate(text, (x, y), textcoords='offset points', xytext=(dx, dy), ha=ha, va=va,
                 fontsize=size, color=color, fontweight=weight, annotation_clip=False)
-print(f'figure system ready -> {os.path.abspath(FIGDIR)}  (vector PDF + 600 dpi PNG per figure)')
+print(f'figure system ready -> {os.path.abspath(FIGDIR)}  | font stack {FONT_STACK[0]} | strict={STRICT_FIGS}')
 ''')
 
 md(r'''
@@ -155,57 +254,55 @@ The figure below is drawn in code and shows **where the decisions are**. Each de
 ''')
 
 code(r'''
-# ----------------------------------------------------------------------------- Figure 1: the allo-HCT decision timeline (what is decided, when, from which data)
-PHASES = [  # (start, end, label, colour, row, label side)
-    (-10, -1,  'conditioning (chemotherapy ± TBI)',   PAL['seq'][1], 0, 'right'),
-    (-5,  -1,  'serotherapy (ATG / alemtuzumab)',     PAL['seq'][0], 1, 'right'),
-    (3,    5,  'PtCy d+3/+4',                         PAL['violet'], 2, 'left'),
-    (5,  180,  'calcineurin inhibitor ± MMF, then taper', PAL['seq'][0], 3, 'in'),
-    (14,  28,  'engraftment',                         PAL['aqua'],   4, 'right'),
-    (14, 100,  'classic acute GvHD window',           PAL['orange'], 5, 'right'),
-    (90, 730,  'chronic GvHD window',                 PAL['blue'],   6, 'in')]
-DECISIONS = [  # (day, decision, task ids, tier)
-    (-45, 'select donor',            'A1–A3, A6', 0), (-21, 'conditioning\n+ serotherapy', 'A1, A5', 1),
-    (-3,  'GvHD prophylaxis',        'A7',        0), (7,   'day-7 risk;\npre-emptive therapy', 'B1, B5', 1),
-    (14,  'early-warning\nsurveillance', 'B2–B4', 0), (24,  'is this GvHD?',  'C1–C3', 2),
-    (33,  'steroid response;\n2nd line', 'C4–C6, D1', 1), (100, 'cGvHD risk;\nIS taper', 'E1, E4', 0),
-    (365, 'late effects; BOS',       'E2, E3',    1)]
+# ----------------------------------------------------------------------------- Figure 1: the allo-HCT timeline, its risk windows and its decision points
+PHASES = [  # (start day, end day, row label, colour)
+    (-10, -1,  'Conditioning',           PAL['seq'][1]),
+    (-5,  -1,  'Serotherapy (ATG)',      PAL['seq'][0]),
+    (3,    5,  'PtCy (day +3, +4)',      PAL['violet']),
+    (5,  180,  'CNI ± MMF, then taper',  PAL['grey2']),
+    (14,  28,  'Engraftment',            PAL['aqua']),
+    (14, 100,  'Acute GvHD window',      PAL['orange']),
+    (90, 730,  'Chronic GvHD window',    PAL['blue'])]
+DECISIONS = [  # (day, decision, task ids)
+    (-45, 'Select donor',               'A1–A3, A6'), (-21, 'Conditioning, serotherapy', 'A1, A5'),
+    (-3,  'GvHD prophylaxis',           'A7'),        (7,   'Day-7 risk, pre-emptive tx', 'B1, B5'),
+    (14,  'Early-warning surveillance', 'B2–B4'),     (24,  'Is this GvHD?',              'C1–C3'),
+    (33,  'Steroid response, 2nd line', 'C4–C6, D1'), (100, 'cGvHD risk, IS taper',      'E1, E4'),
+    (365, 'Late effects, BOS',          'E2, E3')]
+def sx(d): return np.sign(d) * np.log1p(abs(d))           # signed-log day axis: dense early, compressed late
 
-def sx(d):                                           # signed-log day axis: dense early, compressed late
-    return np.sign(d) * np.log1p(abs(d))
-
-fig, ax = plt.subplots(figsize=(FULL, 3.3))
-for a, b, lab, c, row, side in PHASES:
-    y = 6 - row
-    ax.add_patch(plt.Rectangle((sx(a), y - .30), sx(b) - sx(a), .60, color=c, alpha=.93, lw=0))
-    if side == 'in':
-        ax.text(sx(a) + .07, y, lab, fontsize=5.9, va='center', ha='left', color='white', fontweight='bold')
-    elif side == 'right':
-        ax.text(sx(b) + .09, y, lab, fontsize=5.9, va='center', ha='left', color=c, fontweight='bold')
-    else:
-        ax.text(sx(a) - .09, y, lab, fontsize=5.9, va='center', ha='right', color=c, fontweight='bold')
-ax.axvline(sx(0), color=PAL['ink'], lw=1.0, zorder=1)
-ax.text(sx(0), -.62, 'day 0\ngraft infusion', fontsize=5.9, ha='center', va='top',
-        fontweight='bold', color=PAL['ink'], linespacing=1.3)
-for d, lab, tasks, tier in DECISIONS:
-    top = 7.55 + tier * 1.75
-    ax.plot([sx(d), sx(d)], [6.55, top - .18], color=PAL['ink2'], lw=.55, zorder=1)
-    ax.plot(sx(d), 6.55, marker='v', ms=3.0, color=PAL['ink'], zorder=3)
-    ax.text(sx(d), top, lab, fontsize=5.7, ha='center', va='bottom', color=PAL['ink'], linespacing=1.25)
-    ax.text(sx(d), top - .52, f'[{tasks}]', fontsize=5.2, ha='center', va='bottom', color=PAL['ink2'])
-ticks = [-30, -10, 0, 7, 14, 28, 60, 100, 180, 365, 730]
+fig = plt.figure(figsize=(FULL, 4.4))
+ax = fig.add_axes([.195, .335, .78, .625]); key = fig.add_axes([.02, .015, .96, .20]); key.axis('off')
+for i, (a, b, lab, c) in enumerate(PHASES):
+    ax.barh(i, sx(b) - sx(a), left=sx(a), height=.56, color=c, lw=0, zorder=3)
+ax.axvline(0, color=PAL['ink'], lw=1.0, zorder=2)
+def badge(axx, x, y, n):
+    """Numbered marker; the number is meant to sit on the marker, so it is exempt from the overlap gate."""
+    axx.plot(x, y, 'o', ms=11, color=PAL['ink'], zorder=4, clip_on=False)
+    t = axx.text(x, y, str(n), color='white', fontsize=6.4, fontweight='bold', ha='center', va='center', zorder=5)
+    t._ok_overlap = True
+LANES = (-1.2, -2.4)                                       # alternate lanes so neighbouring badges never touch
+for k, (d, lab, tasks) in enumerate(DECISIONS):
+    y = LANES[k % 2]
+    ax.plot([sx(d)] * 2, [y, len(PHASES) - .45], color=PAL['grey2'], lw=.5, ls=':', zorder=1)
+    badge(ax, sx(d), y, k + 1)
+ax.set_yticks([-1.8] + list(range(len(PHASES)))); ax.set_yticklabels(['Decision points'] + [p[2] for p in PHASES])
+ax.set_ylim(len(PHASES) - .45, -3.2); ax.set_xlim(sx(-62), sx(1000))
+ticks = [-30, -10, 0, 7, 14, 28, 100, 365, 730]
 ax.set_xticks([sx(t) for t in ticks]); ax.set_xticklabels([f'{t:+d}' if t else '0' for t in ticks])
-ax.set_xlim(sx(-62), sx(3200)); ax.set_ylim(-1.5, 13.4); ax.set_yticks([])
-ax.set_xlabel('day relative to graft infusion (signed-log scale)')
-ax.spines['left'].set_visible(False)
-ax.text(sx(-60), 13.0, 'clinical decisions  →  GvHD-Bench task families', fontsize=5.9,
-        color=PAL['ink2'], style='italic', ha='left', va='top')
+ax.tick_params(axis='y', length=0); ax.spines['left'].set_visible(False)
+ax.set_axisbelow(True); ax.grid(axis='y', color=PAL['grid'], lw=.4)
+ax.set_xlabel('day relative to graft infusion (day 0; signed-log scale)')
+key.set_xlim(0, 3); key.set_ylim(0, 3)
+for k, (d, lab, tasks) in enumerate(DECISIONS):                # the key: three columns of three
+    col, row = k // 3, k % 3; y = 2.45 - row * .95; x = col + .04
+    badge(key, x, y, k + 1)
+    key.text(x + .07, y, f'{lab}  [{tasks}]', fontsize=6.6, va='center', ha='left')
 finish(fig, 1, 'decision_timeline',
-       'The allo-HCT timeline. Coloured bars are the protocolised exposures and the risk windows they open; '
-       'markers above are the clinical decision points, each of which is a family of GvHD-Bench tasks (8). '
-       'The time axis is signed-log, so the first 100 days - where almost every decision sits - are legible '
-       'alongside two years of follow-up. A model standing at any decision point may use only data whose '
-       'results were available at that moment (4.1).')
+       'The allo-HCT timeline. Bars: the protocolised exposures and the risk windows they open. Numbered markers: '
+       'the clinical decisions, each of which is a family of GvHD-Bench tasks (task ids in brackets; section 8). '
+       'The time axis is signed-log, so the first 100 days, where nearly every decision sits, are legible beside '
+       'two years of follow-up. A model standing at any decision may use only data whose results were known then.')
 
 ''')
 
@@ -302,38 +399,35 @@ ARMS = [('raw', PAL['blue'], '-', 'raw features + tuned ridge'),
         ('pretrained', PAL['aqua'], '-', 'label-free pretrained encoder'),
         ('random twin', PAL['grey'], '-', 'random-weight twin'),
         ('oracle', PAL['ink'], ':', 'oracle (true latent factors)')]
-fig, axes = plt.subplots(1, len(RHOS) + 1, figsize=(FULL, 2.45),
-                         gridspec_kw=dict(width_ratios=[1] * len(RHOS) + [.95], wspace=.36))
-for i, rho in enumerate(RHOS):
-    ax = axes[i]; ygrid(ax)
+fig = plt.figure(figsize=(FULL, 2.8))
+gl = fig.add_gridspec(1, 4, left=.075, right=.705, bottom=.285, top=.865, wspace=.16)
+gr = fig.add_gridspec(1, 1, left=.805, right=.985, bottom=.285, top=.865)
+axs = [fig.add_subplot(gl[0, i]) for i in range(4)]
+for i, (rho, ax) in enumerate(zip(RHOS, axs)):
+    ygrid(ax)
     for arm, c, ls, _ in ARMS:
-        ax.plot(KS, s1.loc[(rho, arm)].values, marker='o', color=c, ls=ls,
-                lw=1.5 if arm != 'oracle' else 1.0, zorder=3 if arm == 'pretrained' else 2)
-    ax.set_xscale('log'); ax.set_xticks(KS); ax.set_xticklabels(KS); ax.minorticks_off()
-    ax.set_ylim(.52, .92)
-    ax.set_title(f'$\\rho$ = {rho:g}', fontsize=7.4, pad=3)
+        ax.plot(KS, s1.loc[(rho, arm)].values, marker='o', ms=3.0, color=c, ls=ls,
+                lw=1.5 if arm != 'oracle' else 1.1, zorder=3 if arm == 'pretrained' else 2)
+    ax.set_xscale('log'); ax.set_xticks(KS); ax.set_xticklabels(KS); ax.minorticks_off(); ax.set_ylim(.52, .92)
+    ax.set_title(f'$\\rho$ = {rho:g}', pad=3); ax.set_xlabel('labelled patients $k$')
     if i: ax.set_yticklabels([])
-    else:
-        ax.set_ylabel('AUROC at the new centre'); panel(ax, 'a', dx=-.30)
-    ax.set_xlabel('labelled patients $k$' if i == 1 else '')
-# right-hand panel: the gain over the raw baseline, as a function of rho, at two label counts
-ax = axes[-1]; ygrid(ax)
+    else: ax.set_ylabel('AUROC at the new centre')
+panel(axs[0], 'a')
+ax = fig.add_subplot(gr[0, 0]); ygrid(ax)
 for k, c, m in ((25, PAL['aqua'], 'o'), (400, PAL['grey'], 's')):
-    g = [s1.loc[(r, 'pretrained'), k] - s1.loc[(r, 'raw'), k] for r in RHOS]
-    ax.plot(RHOS, g, marker=m, color=c, lw=1.5)
-    dlabel(ax, RHOS[-1], g[-1], f'k = {k}', c, dx=4, size=6.4)
-ax.axhline(0, color=PAL['ink2'], lw=.6)
-ax.set_xlabel('shared structure $\\rho$'); ax.set_ylabel('AUROC gain from pretraining'); panel(ax, 'b', dx=-.34)
-ax.set_xlim(-.06, 1.34); ax.set_xticks([0, .5, 1.0])
-fig.legend([plt.Line2D([], [], color=c, ls=ls, marker='o', ms=2.8, lw=1.4) for _, c, ls, _ in ARMS],
-           [lab for _, _, _, lab in ARMS], fontsize=5.8, ncol=4, loc='lower center',
-           bbox_to_anchor=(.5, -.07), handlelength=1.7, columnspacing=1.6)
+    ax.plot(RHOS, [s1.loc[(r, 'pretrained'), k] - s1.loc[(r, 'raw'), k] for r in RHOS], marker=m, ms=3.2,
+            color=c, lw=1.5, label=f'$k$ = {k}')
+ax.axhline(0, color=PAL['ink2'], lw=.6); ax.set_xticks([0, .5, 1]); ax.set_xlim(-.06, 1.06)
+ax.set_xlabel('shared structure $\\rho$'); ax.set_ylabel('AUROC gain from pretraining')
+ax.legend(loc='lower right'); panel(ax, 'b')
+fig.legend([plt.Line2D([], [], color=c, ls=ls, marker='o', ms=3, lw=1.4) for _, c, ls, _ in ARMS],
+           [lab for _, _, _, lab in ARMS], ncol=4, loc='lower center', bbox_to_anchor=(.5, -.01),
+           handlelength=1.8, columnspacing=1.8)
 finish(fig, 2, 'pretraining_vs_shared_structure',
-       '[SIM] Label-free pretraining pays only in proportion to the feature structure shared across centres. '
-       '(a) Target-centre AUROC against the number of labelled target patients, at four levels of shared '
-       'structure rho. (b) The same result as the gain over the tuned raw-feature baseline: large at few '
-       'labels and high rho, absent at rho = 0, and shrinking everywhere as labels accumulate. '
-       'Simulated data; the effect sizes follow from the stated generative model, not from patients.')
+       '[SIM] Label-free pretraining pays in proportion to the structure shared across centres. (a) AUROC at a new '
+       'centre against the number of labelled patients there, at four levels of shared structure rho. (b) The same '
+       'result as the gain over the tuned raw-feature baseline: positive at few labels and high rho, absent at '
+       'rho = 0, and shrinking everywhere as labels accumulate. Simulated data; effect sizes follow from the stated model.')
 ''')
 
 code(r'''

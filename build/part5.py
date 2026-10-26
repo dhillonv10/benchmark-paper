@@ -62,49 +62,39 @@ pw = pd.DataFrame(pw_rows)
 PARAMS = [1, 5, 10, 20, 50, 100, 256, 768, 3072]
 riley = pd.DataFrame([dict(params=P, **{f'AUROC {A}': riley_n(P, A, .35)['n'] for A in (.68, .72, .75)})
                       for P in PARAMS]).set_index('params')
-fig, axes = plt.subplots(1, 3, figsize=(FULL, 2.5), gridspec_kw=dict(wspace=.40))
-ax = axes[0]; ygrid(ax)
-PREC_C = (PAL['seq'][3], PAL['seq'][1], PAL['orange'], PAL['grey'])
-for c_, col in zip(prec.columns, PREC_C):
-    ax.plot(prec.index, prec[c_], marker='o', ms=2.6, color=col, lw=1.3,
-            label=c_.replace('AUROC ', 'AUROC ').replace('prev ', '$\\pi$='))
+fig = plt.figure(figsize=(FULL, 3.0))
+gs = fig.add_gridspec(1, 3, width_ratios=[1, 1.1, 1], left=.075, right=.985, bottom=.255, top=.875, wspace=.38)
+ax = fig.add_subplot(gs[0, 0]); ygrid(ax)                                          # (a) precision of one AUROC
+for c_, col in zip(prec.columns, (PAL['seq'][3], PAL['seq'][1], PAL['orange'], PAL['grey'])):
+    ax.plot(prec.index, prec[c_], marker='o', ms=2.8, color=col, lw=1.3, label=c_.replace('AUROC ', 'AUROC ').replace('prev ', '$\\pi$ = '))
 ax.axhline(.03, color=PAL['bad'], ls=':', lw=.9)
-ax.text(prec.index[0] * 1.05, .0315, 'target ±0.03', fontsize=5.8, color=PAL['bad'])
-ax.set_xscale('log'); ax.set_xlabel('patients'); ax.set_ylabel('95% CI half-width of one AUROC')
-ax.set_xlim(90, 9e3); ax.legend(fontsize=5.3, loc='upper right', labelspacing=.25, borderaxespad=.2)
-panel(ax, 'a', dx=-.30)
-ax = axes[1]; ygrid(ax)
+ax.annotate('target ±0.03', (prec.index[0] * 1.04, .03), xytext=(0, 3), textcoords='offset points', fontsize=6.4, color=PAL['bad'], va='bottom')
+ax.set_xscale('log'); ax.set_xlabel('patients'); ax.set_ylabel('95% CI half-width of one AUROC'); ax.set_xlim(90, 9e3)
+ax.legend(loc='upper right', labelspacing=.3); panel(ax, 'a')
+ax = fig.add_subplot(gs[0, 1]); ygrid(ax)                                          # (b) power to show a gain over a correlated baseline
 DCOL = {.02: PAL['seq'][0], .03: PAL['seq'][2], .05: PAL['violet']}
 for _, r_ in pw.iterrows():
-    col = DCOL[r_.delta_AUROC]
-    ax.plot(grid, [r_[f'n={n}'] for n in grid], marker='o', ms=2.6, color=col, lw=1.3,
-            ls='-' if r_.score_corr == .85 else '--')
-    if r_.score_corr == .85:
-        dlabel(ax, grid[0], r_[f'n={grid[0]}'], f'Δ={r_.delta_AUROC:g}', col, dx=-4, ha='right', size=5.9)
+    ax.plot(grid, [r_[f'n={n}'] for n in grid], marker='o', ms=2.8, color=DCOL[r_.delta_AUROC], lw=1.3, ls='-' if r_.score_corr == .85 else '--')
 ax.axhline(.8, color=PAL['bad'], ls=':', lw=.9)
-ax.set_xscale('log'); ax.set_xticks(grid); ax.set_xticklabels([f'{g//1000}k' if g >= 1000 else g for g in grid])
-ax.minorticks_off(); ax.set_xlim(130, 9e3)
-ax.set_xlabel('patients (prevalence 0.35)'); ax.set_ylabel('power, paired DeLong test')
-ax.set_ylim(0, 1.08); panel(ax, 'b', dx=-.30)
-ax.text(.97, .04, 'solid: score correlation 0.85\ndashed: 0.60', transform=ax.transAxes,
-        fontsize=5.5, ha='right', va='bottom', color=PAL['ink2'])
-ax = axes[2]; ygrid(ax)
+ax.set_xscale('log'); ax.set_xticks(grid); ax.set_xticklabels([f'{g // 1000}k' if g >= 1000 else g for g in grid]); ax.minorticks_off()
+ax.set_xlim(150, 8e3); ax.set_ylim(0, 1.05); ax.set_xlabel('patients (prevalence 0.35)'); ax.set_ylabel('power, paired DeLong test')
+hs = [plt.Line2D([], [], color=DCOL[d], lw=1.5) for d in (.05, .03, .02)] + [plt.Line2D([], [], color=PAL['ink2'], lw=1.2), plt.Line2D([], [], color=PAL['ink2'], lw=1.2, ls='--')]
+ax.legend(hs, ['gain 0.05', 'gain 0.03', 'gain 0.02', 'scores r = 0.85', 'scores r = 0.60'], loc='upper center',
+          bbox_to_anchor=(.5, -.24), ncol=5, columnspacing=1.3, handlelength=1.6, labelspacing=.3); panel(ax, 'b')
+ax = fig.add_subplot(gs[0, 2]); ygrid(ax)                                          # (c) patients needed to develop a model
 for c_, col in zip(riley.columns, (PAL['seq'][1], PAL['seq'][2], PAL['seq'][3])):
-    ax.plot(riley.index, riley[c_], marker='o', ms=2.6, color=col, lw=1.3)
-    dlabel(ax, riley.index[-1], riley[c_].iloc[-1], c_.replace('AUROC ', ''), col, dx=4, size=5.9)
-for P_, lab in ((20, 'registry\nmodel'), (768, 'FM embedding\nhead')):
-    ax.axvline(P_, color=PAL['ink2'], lw=.5, ls=':')
-    ax.text(P_ * 1.2, riley.values.min() * 1.25, lab, fontsize=5.3, color=PAL['ink2'], rotation=90, va='bottom')
-ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xlabel('candidate parameters P')
-ax.set_ylabel('patients to develop the model'); panel(ax, 'c', dx=-.32)
-ax.set_xlim(.75, 1.1e4)
-ax.text(.03, .97, 'target AUROC', transform=ax.transAxes, fontsize=5.6, va='top', color=PAL['ink2'])
+    ax.plot(riley.index, riley[c_], marker='o', ms=2.8, color=col, lw=1.3, label=c_.replace('AUROC ', 'target AUROC '))
+for P_, lab in ((20, 'registry\nmodel'), (768, 'FM embedding\nhead')):                  # labelled above the axes, centred on their own line
+    ax.axvline(P_, ymin=.32, color=PAL['ink2'], lw=.6, ls=':')
+    ax.annotate(lab, (P_, 1.0), xycoords=('data', 'axes fraction'), xytext=(0, 3), textcoords='offset points',
+                fontsize=6.4, color=PAL['ink2'], va='bottom', ha='center')
+ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xlabel('candidate parameters $P$'); ax.set_ylabel('patients to develop the model')
+ax.set_xlim(.8, 1.2e4); ax.set_ylim(25, 6e5); ax.legend(loc='lower right', labelspacing=.3); panel(ax, 'c')
 finish(fig, 9, 'sample_size_and_power',
-       'Three different sample-size questions. (a) Precision: the 95% confidence interval of a single AUROC, '
-       'against the number of patients. (b) Power: the paired DeLong test for an improvement of 0.02-0.05 '
-       'AUROC over a correlated baseline - the regime any foundation-model claim actually lives in. '
-       '(c) Development: the Riley minimum sample size against the number of candidate parameters, which is '
-       'why head size, not enthusiasm, sets the data requirement.')
+       'Three different sample-size questions. (a) Precision: the 95% confidence interval of a single AUROC against the number of '
+       'patients. (b) Power: the paired DeLong test for an improvement of 0.02 to 0.05 AUROC over a correlated baseline, the regime '
+       'any foundation-model claim lives in; solid lines are scores correlated at 0.85, dashed at 0.60. (c) Development: the Riley '
+       'minimum sample size against the number of candidate parameters, which is why head size sets the data requirement.')
 display(md_table(prec.round(3), index=True)); display(md_table(pw.round(2))); display(md_table(riley, index=True))
 ''')
 
@@ -166,47 +156,62 @@ for c in fmt.columns:
 fmt.insert(0, 'n required', need_tbl.set_index('id').loc[fmt.index, 'n required'].astype(int).values)
 display(md_table(fmt.reset_index()))
 
-# ------------------------------------------------- Figure 10: what exists vs what is needed, and years to get there
-fig, axes = plt.subplots(1, 2, figsize=(FULL, 3.2), gridspec_kw=dict(width_ratios=[1, 1.2], wspace=.3))
-ax = axes[0]; ygrid(ax)
-SRC = [('public GEO\nseries (typical)', 40, PAL['grey2']), ('our pilot\n(9 studies)', 838, PAL['grey2']),
-       ('BMT CTN 1703\n(randomised)', 431, PAL['orange']), ('MAGIC day-7\ncohort', 1287, PAL['orange']),
-       ('MSK hospitalome\n(public)', 1000, PAL['orange']), ('registry extract\n(realistic ask)', 120000, PAL['aqua']),
-       ('CIBMTR full\n(2017)', 470000, PAL['aqua'])]
-ax.bar(range(len(SRC)), [v for _, v, _ in SRC], color=[c for _, _, c in SRC], width=.66)
-for i, (_, v, _) in enumerate(SRC):
-    ax.text(i, v * 1.35, f'{v:,}', ha='center', fontsize=5.8, color=PAL['ink'], fontweight='bold')
-for y, lab, c, dy in ((riley_n(20, .72, .35)['n'], 'n to develop a 20-parameter registry model', PAL['ink'], 1.9),
-                      (riley_n(768, .72, .35)['n'], 'n to develop a 768-parameter embedding head', PAL['bad'], 1.45)):
-    ax.axhline(y, color=c, ls='--', lw=.8)
-    ax.text(-.45, y * dy, f'{lab}: {y:,}', fontsize=5.5, ha='left', color=c)
-ax.set_yscale('log'); ax.set_xticks(range(len(SRC)))
-ax.set_xticklabels([s_ for s_, _, _ in SRC], fontsize=5.4, rotation=30, ha='right')
-ax.set_ylabel('patients (log scale)'); ax.set_ylim(10, 6e6); panel(ax, 'a', dx=-.20)
-ax = axes[1]; ygrid(ax, 'x')
-sub = piv_acc.copy(); sub['best'] = sub.min(axis=1, skipna=True); sub = sub.sort_values('best')
-ypos = np.arange(len(sub)); XCAP = 40.0
-for (name, _, _, _), col, mk in zip(ROUTES, (PAL['seq'][0], PAL['seq'][2], PAL['aqua'], PAL['orange']), ('o', 's', 'D', '^')):
-    v = sub[name].values; keep = np.isfinite(v)
-    ax.scatter(np.clip(v[keep], .085, XCAP), ypos[keep], s=12, color=col, marker=mk, zorder=3,
-               label=name.split(',')[0], lw=0)
-ax.set_yticks(ypos); ax.set_yticklabels(sub.index, fontsize=5.4)
-ax.set_xscale('log'); ax.set_xlabel('years to reach the required n')
-for xv, lab in ((1, '1 y'), (5, '5 y')):
-    ax.axvline(xv, color=PAL['ink2'], lw=.5, ls=':')
-    ax.text(xv, len(sub) + .2, lab, fontsize=5.6, ha='center', color=PAL['ink2'])
-ax.set_xlim(.07, XCAP * 1.6); ax.set_ylim(-.8, len(sub) + 1.0)
-ax.legend(fontsize=5.4, loc='upper center', bbox_to_anchor=(.5, -.13), ncol=2, markerscale=1.0,
-          handletextpad=.3, columnspacing=1.1)
-panel(ax, 'b', dx=-.17)
+# ------------------------------------------------- Figure 10: what exists against what is needed, and how long it would take
+FWIN, FHIN = FULL, 4.6
+fig = plt.figure(figsize=(FWIN, FHIN))
+axa = fig.add_axes([1.33 / FWIN, .95 / FHIN, 1.75 / FWIN, 3.15 / FHIN])
+axb = fig.add_axes([4.15 / FWIN, .95 / FHIN, 2.95 / FWIN, 3.15 / FHIN])
+SRC = [('CIBMTR full (2017)', 470000, PAL['aqua']), ('Registry extract', 120000, PAL['aqua']), ('MAGIC day-7 cohort', 1287, PAL['orange']),
+       ('MSK hospitalome', 1000, PAL['orange']), ('Pilot, 9 studies', 838, PAL['grey2']), ('BMT CTN 1703', 431, PAL['orange']),
+       ('GEO series (typical)', 40, PAL['grey2'])]
+ax = axa; ygrid(ax, 'x')
+ax.barh(range(len(SRC)), [v for _, v, _ in SRC], color=[c for _, _, c in SRC], height=.62, zorder=3)
+ax.set_yticks(range(len(SRC))); ax.set_yticklabels([f'{n}\nn = {v:,}' for n, v, _ in SRC]); ax.tick_params(axis='y', length=0)
+ax.set_xscale('log'); ax.set_xlim(10, 1e6); ax.set_ylim(len(SRC) - .5, -.5); ax.minorticks_off()
+n20, n768 = riley_n(20, .72, .35)['n'], riley_n(768, .72, .35)['n']
+ax.axvline(n20, color=PAL['ink'], ls='--', lw=.9, zorder=4); ax.axvline(n768, color=PAL['bad'], ls='--', lw=.9, zorder=4)
+ax.set_xlabel('patients (log scale)')
+ax.annotate('a', (0, 1), xycoords='axes fraction', xytext=(-1.25 * 72, 32), textcoords='offset points', fontsize=9, fontweight='bold')
+fig.legend([plt.Rectangle((0, 0), 1, 1, color=PAL['aqua']), plt.Rectangle((0, 0), 1, 1, color=PAL['orange']), plt.Rectangle((0, 0), 1, 1, color=PAL['grey2']),
+            plt.Line2D([], [], color=PAL['ink'], ls='--', lw=.9), plt.Line2D([], [], color=PAL['bad'], ls='--', lw=.9)],
+           ['registry', 'consortium / biobank', 'public', f'needed to develop a 20-parameter model ({n20:,})',
+            f'needed to develop a 768-parameter head ({n768:,})'], ncol=2, loc='lower left', bbox_to_anchor=(.02, .0),
+           columnspacing=1.4, handlelength=1.4, labelspacing=.4)
+# (b) years to reach the required n, task by task and route, as a matrix
+ROUTE_NAMES = ['single\ncentre', '20-centre\nconsortium', 'registry\nextract', 'existing\nbiobank']
+RT = ['single centre, prospective', '20-centre consortium, prospective', 'registry extract (CIBMTR/EBMT)', 'existing biobank (MAGIC/BMT CTN)']
+tbl = piv_acc[RT].copy(); tbl['best'] = tbl.min(axis=1, skipna=True); tbl = tbl.sort_values('best').drop(columns='best')
+nreq = need_tbl.set_index('id')['n required']
+def cls(v):
+    if np.isnan(v): return 3
+    if v == 0: return 0
+    return 0 if v <= 1 else 1 if v <= 5 else 2
+def txt(v):
+    if np.isnan(v): return '—'
+    if v == 0: return 'now'
+    return '>40 y' if v > 40 else (f'{v:.1f} y' if v < 10 else f'{v:.0f} y')
+ax = axb
+CELLC = [PAL['aqua'], PAL['seq'][0], PAL['orange'], '#ececea']; CELLA = [.85, .85, .55, 1.0]
+nr, nc = len(tbl), 5
+for i, (tid, row) in enumerate(tbl.iterrows()):
+    ax.text(0.5, i, f'{int(nreq[tid]):,}', ha='center', va='center', fontsize=6.4, color=PAL['ink'])
+    for j, rt in enumerate(RT):
+        v = row[rt]; ax.add_patch(plt.Rectangle((j + 1.03, i - .46), .94, .92, color=CELLC[cls(v)], alpha=CELLA[cls(v)], lw=0))
+        _t = ax.text(j + 1.5, i, txt(v), ha='center', va='center', fontsize=6.3, color=PAL['ink'] if cls(v) != 3 else PAL['ink2'])
+        _t._ok_overlap = True      # the label belongs to this cell
+ax.set_xlim(0, nc); ax.set_ylim(nr - .5, -.5)
+ax.set_yticks(range(nr)); ax.set_yticklabels(tbl.index); ax.tick_params(axis='y', length=0)
+ax.xaxis.tick_top(); ax.set_xticks(np.arange(nc) + .5); ax.set_xticklabels(['patients\nrequired'] + ROUTE_NAMES); ax.tick_params(axis='x', length=0)
+for sp in ax.spines.values(): sp.set_visible(False)
+ax.annotate('b', (0, 1), xycoords='axes fraction', xytext=(-.45 * 72, 32), textcoords='offset points', fontsize=9, fontweight='bold')
+fig.legend([plt.Rectangle((0, 0), 1, 1, color=c, alpha=a) for c, a in zip(CELLC, CELLA)],
+           ['covered now or within 1 year', 'within 5 years', 'more than 5 years', 'route cannot serve the task'],
+           ncol=2, loc='lower right', bbox_to_anchor=(.99, .0), columnspacing=1.2, handlelength=1.2, labelspacing=.4)
 finish(fig, 10, 'data_landscape_and_accrual',
-       'What exists against what is needed, and how long it would take. (a) Patients available from each real '
-       'source, on a log scale, against the Riley minimum for two head sizes. Public transcriptomic resources '
-       '(grey) are three orders of magnitude short of a 768-parameter head; registry extracts are not. '
-       '(b) Projected years to reach the required n for each task, by route; points at the left edge are already '
-       'covered by the retrospective back-catalogue. Tasks needing protocolised '
-       'biospecimens cannot be served by a registry extract at all, which is why the staged plan buys the '
-       'registry tasks first and the biobank tasks second.')
+       'What exists against what is needed, and how long it would take. (a) Patients available from each real source on a log scale, '
+       'against the Riley minimum for two head sizes: public transcriptomic resources are orders of magnitude short, registry extracts are '
+       'not. (b) Projected time to reach the patients required for each task, by route. Tasks that need protocolised biospecimens cannot '
+       'be served by a registry extract at all, which is why the staged plan buys the registry tasks first and the biobank tasks second.')
 ''')
 
 code(r'''
@@ -248,58 +253,56 @@ Before this specification we built and ran the opposite design: expression as th
 
 code(r'''
 # ----------------------------------------------------------------------------- Figure 11: the pilot results that this paper is built on (numbers from the earlier notebook)
-PILOT_LOSO = {  # held-out study -> normalised-genes LOSO AUROC, and sample type
- 'PBMC T cells':    (0.790, 'blood'), 'CD8 subsets':   (0.413, 'blood'),
- 'PtCy T cells':    (0.577, 'blood'), 'sc pseudobulk': (0.595, 'blood'),
- 'colon (1)':       (0.826, 'tissue'), 'colon (2)':    (0.833, 'tissue'),
- 'skin':            (0.754, 'tissue')}
-FM_ARMS = [('normalised\ngenes', 0.756, None), ('GF 10M', 0.498, 0.547),
-           ('GF 104M', 0.678, 0.614), ('GF 316M', 0.615, 0.652)]
-fig, axes = plt.subplots(1, 3, figsize=(FULL, 2.45), gridspec_kw=dict(width_ratios=[1.35, 1.1, 1], wspace=.34))
-# (a) LOSO by held-out study, split by sample type
-ax = axes[0]; ygrid(ax)
-keys = list(PILOT_LOSO); vals = [PILOT_LOSO[k][0] for k in keys]
-cols = [PAL['aqua'] if PILOT_LOSO[k][1] == 'tissue' else PAL['seq'][1] for k in keys]
-ax.bar(range(len(keys)), vals, color=cols, width=.66)
+PILOT_LOSO = [('PBMC T cells', .790, 'blood'), ('CD8 subsets', .413, 'blood'), ('PtCy T cells', .577, 'blood'), ('sc pseudobulk', .595, 'blood'),
+              ('colon (1)', .826, 'tissue'), ('colon (2)', .833, 'tissue'), ('skin', .754, 'tissue')]
+FM_ARMS = [('plain\ngenes', .756, None), ('GF\n10M', .498, .547), ('GF\n104M', .678, .614), ('GF\n316M', .615, .652)]
+ZP = [('skin', .84, 'tissue'), ('colon', .84, 'tissue'), ('PBMC T cells', .70, 'blood'), ('sorted PtCy T', .45, 'blood'), ('CD8 homing', .42, 'blood')]
+TC, BC = PAL['aqua'], PAL['seq'][1]
+fig = plt.figure(figsize=(FULL, 3.1))
+gs = fig.add_gridspec(1, 3, width_ratios=[1.5, 1.2, 1.0], left=.075, right=.985, bottom=.235, top=.885, wspace=.38)
+def vlab(ax, i, v, ref=.5, x=None, dx=0):
+    """Value label above its bar; inside the bar if it would otherwise cross the chance line."""
+    inside = ref - .09 <= v < ref
+    t = ax.text((i if x is None else x) + dx, v - .012 if inside else v + .014, f'{v:.2f}'[1:] if v < 1 else f'{v:.2f}', ha='center',
+                va='top' if inside else 'bottom', fontsize=6.4, fontweight='bold')
+    if inside: t._ok_overlap = True
+ax = fig.add_subplot(gs[0, 0]); ygrid(ax)                                           # (a) leave-one-study-out transfer
+ax.bar(range(7), [v for _, v, _ in PILOT_LOSO], color=[TC if g == 'tissue' else BC for _, _, g in PILOT_LOSO], width=.66, zorder=3)
+for i, (_, v, _) in enumerate(PILOT_LOSO): vlab(ax, i, v)
 ax.axhline(.5, color=PAL['ink2'], ls='--', lw=.6)
-for i, v in enumerate(vals): ax.text(i, v + .015, f'{v:.2f}', ha='center', fontsize=5.8, fontweight='bold')
-ax.set_xticks(range(len(keys))); ax.set_xticklabels(keys, fontsize=5.6, rotation=30, ha='right')
-ax.set_ylabel('leave-one-study-out AUROC'); ax.set_ylim(0, 1.0); panel(ax, 'a', dx=-.20)
-m_t = np.mean([v for v, (k) in zip(vals, keys) if PILOT_LOSO[k][1] == 'tissue'])
-m_b = np.mean([v for v, (k) in zip(vals, keys) if PILOT_LOSO[k][1] == 'blood'])
-ax.plot([3.6, 6.4], [m_t] * 2, color=PAL['aqua'], lw=1.3)
-ax.plot([-.4, 3.4], [m_b] * 2, color=PAL['seq'][1], lw=1.3)
-ax.text(5.0, m_t - .075, f'tissue mean {m_t:.2f}', fontsize=5.6, ha='center', color=PAL['aqua'], fontweight='bold')
-ax.text(1.5, m_b - .075, f'blood mean {m_b:.2f}', fontsize=5.6, ha='center', color=PAL['seq'][1], fontweight='bold')
-# (b) frozen foundation model vs its random-weight twin vs plain genes
-ax = axes[1]; ygrid(ax)
-x = np.arange(len(FM_ARMS)); w = .34
-ax.bar(x - w / 2, [a[1] for a in FM_ARMS], w, color=PAL['seq'][2])
-ax.bar([xi + w / 2 for xi, a in zip(x, FM_ARMS) if a[2]], [a[2] for a in FM_ARMS if a[2]], w, color=PAL['grey2'])
-ax.axhline(FM_ARMS[0][1], color=PAL['ink'], ls='--', lw=.8)
-ax.text(len(FM_ARMS) - .55, FM_ARMS[0][1] + .012, 'plain normalised genes', fontsize=5.6, ha='right', color=PAL['ink'])
-ax.axhline(.5, color=PAL['ink2'], ls=':', lw=.6)
-ax.set_xticks(x); ax.set_xticklabels([a[0] for a in FM_ARMS], fontsize=5.8)
-ax.set_ylabel('4-study LOSO AUROC'); ax.set_ylim(.35, .85); panel(ax, 'b', dx=-.26)
-ax.text(.02, .97, 'dark = pretrained\nlight = random-weight twin', transform=ax.transAxes, fontsize=5.5,
-        ha='left', va='top', color=PAL['ink2'])
-# (c) the zero-parameter biology score, and where it fails
-ax = axes[2]; ygrid(ax)
-ZP = [('skin', .84), ('colon', .84), ('PBMC T cells', .70), ('sorted PtCy T', .45), ('CD8 homing', .42)]
-cols = [PAL['aqua']] * 2 + [PAL['seq'][1]] * 3
-ax.bar(range(len(ZP)), [v for _, v in ZP], color=cols, width=.64)
+m_b = np.mean([v for _, v, g in PILOT_LOSO if g == 'blood']); m_t = np.mean([v for _, v, g in PILOT_LOSO if g == 'tissue'])
+for x0, x1, m, g, c in ((-.4, 3.4, m_b, 'blood / sorted T cells', BC), (3.6, 6.4, m_t, 'tissue biopsy', TC)):
+    ax.plot([x0, x1], [1.05, 1.05], color=c, lw=1.6, solid_capstyle='butt')
+    ax.annotate(f'{g}\nmean {m:.2f}', ((x0 + x1) / 2, 1.05), xytext=(0, 3), textcoords='offset points', ha='center', va='bottom', fontsize=6.4, fontweight='bold')
+ax.set_xticks(range(7)); ax.set_xticklabels([n for n, _, _ in PILOT_LOSO], rotation=35, ha='right', rotation_mode='anchor')
+ax.set_ylim(0, 1.0 + .30); ax.set_yticks([0, .2, .4, .6, .8, 1.0]); ax.spines['left'].set_bounds(0, 1.0)
+ax.set_ylabel('leave-one-study-out AUROC'); panel(ax, 'a')
+ax = fig.add_subplot(gs[0, 1]); ygrid(ax)                                           # (b) frozen foundation models against their random twins
+x = np.arange(len(FM_ARMS)); w = .40
+ax.bar([0], [FM_ARMS[0][1]], w * 1.35, color=PAL['seq'][2], zorder=3, label='frozen model')
+ax.bar(x[1:] - w / 2, [a[1] for a in FM_ARMS[1:]], w, color=PAL['seq'][2], zorder=3)
+ax.bar(x[1:] + w / 2, [a[2] for a in FM_ARMS[1:]], w, color=PAL['grey2'], zorder=3, label='random-weight twin')
+ax.axhline(FM_ARMS[0][1], color=PAL['ink'], ls='--', lw=.8, label='plain normalised genes')
+vlab(ax, 0, FM_ARMS[0][1], ref=9, x=0)
+for xi, a in zip(x[1:], FM_ARMS[1:]):
+    vlab(ax, 0, a[1], ref=9, x=xi - w / 2); vlab(ax, 0, a[2], ref=9, x=xi + w / 2)
+ax.set_xticks(x); ax.set_xticklabels([a[0] for a in FM_ARMS]); ax.set_ylim(.35, 1.0); ax.set_yticks([.4, .5, .6, .7, .8])
+ax.spines['left'].set_bounds(.35, .8); ax.set_ylabel('4-study LOSO AUROC'); ax.legend(loc='upper right', labelspacing=.3); panel(ax, 'b')
+ax = fig.add_subplot(gs[0, 2]); ygrid(ax)                                           # (c) the zero-parameter score
+ax.bar(range(5), [v for _, v, _ in ZP], color=[TC if g == 'tissue' else BC for _, _, g in ZP], width=.64, zorder=3)
+for i, (_, v, _) in enumerate(ZP): vlab(ax, i, v)
 ax.axhline(.5, color=PAL['ink2'], ls='--', lw=.6)
-for i, (_, v) in enumerate(ZP): ax.text(i, v + .015, f'{v:.2f}', ha='center', fontsize=5.8, fontweight='bold')
-ax.set_xticks(range(len(ZP))); ax.set_xticklabels([s for s, _ in ZP], fontsize=5.6, rotation=30, ha='right')
-ax.set_ylabel('AUROC, zero-parameter\nIFN-γ / allograft score'); ax.set_ylim(0, 1.0); panel(ax, 'c', dx=-.30)
+ax.set_xticks(range(5)); ax.set_xticklabels([n for n, _, _ in ZP], rotation=35, ha='right', rotation_mode='anchor')
+ax.set_ylim(0, 1.0); ax.set_ylabel('AUROC, no fitting\n(IFN-γ / allograft score)'); panel(ax, 'c')
+ax.legend([plt.Rectangle((0, 0), 1, 1, color=TC), plt.Rectangle((0, 0), 1, 1, color=BC)], ['tissue', 'blood / T cells'],
+          loc='upper right', handlelength=1.0, labelspacing=.3)
 finish(fig, 11, 'pilot_results',
-       'The pilot this paper is built on (9 public studies, 838 samples; numbers from the earlier notebook in '
-       'this repository). (a) Leave-one-study-out transfer with plain normalised genes: tissue biopsies '
-       'transfer across laboratories and organs, blood and sorted T cells do not. (b) Frozen Geneformer at '
-       'three sizes against its own random-weight twins and against plain genes: one size beats its twin, '
-       'none beats the simple baseline, and the largest model is not the best. (c) A zero-parameter score '
-       'written down in advance - the mean expression of the interferon-gamma and allograft-rejection gene '
-       'sets - matches the fitted models in inflamed tissue and fails entirely in sorted blood T cells.')
+       'The pilot this paper is built on (9 public studies, 838 samples; numbers from the earlier notebook in this repository). '
+       '(a) Leave-one-study-out transfer with plain normalised genes: tissue biopsies transfer across laboratories and organs, blood '
+       'and sorted T cells do not. (b) Frozen Geneformer (GF) at three sizes against its own random-weight twins and against plain '
+       'genes: one size beats its twin, none beats the simple baseline, and the largest model is not the best. (c) A zero-parameter '
+       'score written down in advance, the mean expression of the interferon-gamma and allograft-rejection gene sets, matches '
+       'fitted models in inflamed tissue and fails in sorted blood T cells.')
 ''')
 
 
@@ -607,6 +610,7 @@ md(r'''
 * **Runtime.** CPU only. Dependencies: numpy, pandas, scipy, scikit-learn, matplotlib. End-to-end run ≈ 2–5 minutes; set the environment variable `ALLOFM_QUICK=1` to cut simulation replicates (numbers get noisier and the consistency tolerances still apply).
 * **Seeds.** Global seed in the setup cell; every simulation takes an explicit seed. The [SIM] cohort generator is `simulate_cohort(...)` and is deterministic given its seed.
 * **Exported specification** (written to `spec/`, hashes in `spec/MANIFEST.json`): `data_dictionary.csv`, `sampling_schedule.csv`, `task_registry.csv`, `gate.json`.
+* **Figure layout gate.** Every figure is measured before it is saved: the build fails if any two pieces of rendered text overlap, if text sits on a data marker, line or bar, or if any font is below 6 pt (set `ALLOFM_STRICT_FIGS=1` to make a failure stop the run; otherwise it is printed as a warning). The whole suite passes under both Liberation Sans and the wider DejaVu Sans that Colab falls back to (`ALLOFM_FONT="DejaVu Sans"`).
 * **Tests executed in-notebook.** MAGIC grading vignettes; steroid-response and GRFS vignettes; fast-vs-textbook DeLong agreement; Hanley–McNeil versus simulated standard error; IPCW td-AUROC against the uncensored AUROC; IPCW recovery under censoring; Aalen–Johansen against empirical incidence; net-benefit bounds for perfect and random models; Riley criterion-1 arithmetic; the leakage audit on a cohort with a planted leak; and a final consistency check of every number quoted in the narrative.
 * **What is *not* in this notebook.** Any trained foundation model, any real patient data, and any claim about clinical performance. The pilot results in §10 come from the executed notebook `GvHD_FM_benchmark_blueprint.ipynb` in this repository.
 

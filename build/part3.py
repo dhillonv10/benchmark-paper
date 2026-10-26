@@ -31,83 +31,83 @@ The model is not a GvHD classifier. It is a **multi-state model** on the transpl
 ''')
 
 code(r'''
-# ----------------------------------------------------------------------------- Figure 4: the ALLO-FM architecture (drawn, so it can be read at print size)
+# ----------------------------------------------------------------------------- Figure 4: the ALLO-FM architecture (every box is sized from its own text, so nothing can overflow)
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
-fig, ax = plt.subplots(figsize=(FULL, 3.9)); ax.set_xlim(0, 122); ax.set_ylim(0, 66); ax.axis('off')
-def box(x, y, w, h, title, body, fc, tc=None, fs=5.3, tfs=6.2):
-    ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle='round,pad=0.5,rounding_size=1.0',
-                                fc=fc, ec=PAL['ink2'], lw=.7))
-    ax.text(x + 1.4, y + h - 1.5, title, fontsize=tfs, fontweight='bold', va='top', color=tc or PAL['ink'])
-    ax.text(x + 1.4, y + h - 5.0, body, fontsize=fs, va='top', color=tc or PAL['ink2'], linespacing=1.42)
-def arrow(x1, y1, x2, y2, rad=0.0):
-    ax.add_patch(FancyArrowPatch((x1, y1), (x2, y2), arrowstyle='-|>', mutation_scale=7,
-                                 color=PAL['ink2'], lw=.8, connectionstyle=f'arc3,rad={rad}'))
-# ---- inputs (left column)
-box(0, 46, 36, 15, 'STATIC PAIR  D01–D06, D20',
-    'recipient · disease · DRI · HCT-CI\n'
-    'donor age, sex, parity · CMV · ABO\n'
-    'HLA GL-strings (R and D) · DPB1-TCE\n'
-    'B-leader · KIR · HED · minor antigens', '#eef4fd')
-box(0, 26, 36, 16, 'EVENT TIMELINE  D08–D13, D24',
-    'conditioning doses by day · PtCy\n'
-    'CNI troughs · MMF · antibiotics\n'
-    'CBC · bilirubin · CRP · creatinine\n'
-    'vitals · stool volume · rash %BSA\n'
-    'steroid and second-line exposure', '#eef4fd')
-box(0, 1, 36, 22, 'MODALITY ADAPTERS  D07, D14–D19',
-    'graft composition, flow          Tier C\n'
-    'T-cell reconstitution, flow      Tier C\n'
-    'plasma proteins ST2, REG3α       Tier C\n'
-    'stool microbiome                 Tier C\n'
-    'transcriptome, tissue / blood  Tier C/D\n'
-    'TCRβ repertoire                  Tier D\n'
-    'biopsy whole-slide image         Tier D', '#f4f1fb')
-# ---- encoders (middle column)
-box(41, 46, 31, 15, 'PAIR ENCODER',
-    'allele embeddings → separate\n'
-    'GvH-direction and HvG-direction\n'
-    'mismatch channels; pretrained by\n'
-    'donor matching (O-C3)', '#ffffff')
-box(41, 28, 31, 12, 'EVENT TOKENISER',
-    'emb(code) + emb(value decile)\n'
-    '+ φ(Δt, signed-log) + emb(source)\n'
-    '"not done" is its own token', '#ffffff')
-box(41, 1, 31, 22, 'PER-MODALITY ENCODERS',
-    'each contributes ONE summary\n'
-    'token, placed at its t_known\n\n'
-    'masked-modality objectives\n'
-    '(O-M1 / O-M2)\n\n'
-    'modality dropout p ≈ 0.5:\nnone is required at inference', '#ffffff')
-# ---- backbone
-ax.add_patch(FancyBboxPatch((77, 14), 16, 39, boxstyle='round,pad=0.5,rounding_size=1.0',
-                            fc=PAL['seq'][3], ec=PAL['seq'][3], lw=.7))
-ax.text(85, 50.5, 'TIMELINE\nTRANSFORMER', fontsize=6.4, fontweight='bold', ha='center', va='top',
-        color='white', linespacing=1.3)
-ax.text(85, 40, 'causal\ntime-aware\ncentre-adversarial', fontsize=5.3, ha='center', va='top',
-        color='white', linespacing=1.5)
-ax.text(85, 29, 'landmark mask\nt_known ≤ L\nenforced inside\nthe attention', fontsize=5.3, ha='center',
-        va='top', color='white', linespacing=1.5, fontweight='bold')
-# ---- heads
-box(97, 33, 25, 21, 'HEADS at landmark L',
-    'multi-state cause-specific\nhazards over:\n'
-    'aGvHD II–IV · III–IV\nsteroid-refractory\ncGvHD · relapse · NRM\ndeath', '#eaf7f1')
-box(97, 4, 25, 22, 'DERIVED QUANTITIES',
-    'organ-specific stages (O-S2)\n\n'
-    'day +28 response (O-S1)\n\n'
-    'counterfactual arm contrast\n(O-S3)\n\n'
-    'cumulative incidence,\ncalibration, net benefit', '#eaf7f1', fs=5.1)
-for y in (53, 34, 12): arrow(36.6, y, 40.4, y)
-arrow(72.6, 53, 76.4, 47, rad=.10); arrow(72.6, 34, 76.4, 33); arrow(72.6, 12, 76.4, 20, rad=-.10)
-arrow(93.6, 43, 96.4, 43); arrow(93.6, 22, 96.4, 16, rad=-.10)
-ax.text(18, 63.6, 'what every patient has   (Tier A/B)', fontsize=5.9, ha='center', color=PAL['ink2'], style='italic')
-ax.text(0, 24.2, 'what some patients have   (Tier C/D — optional at inference)', fontsize=5.9, ha='left',
-        color=PAL['ink2'], style='italic')
+FW = FULL
+fig = plt.figure(figsize=(FW, 4.0)); ax = fig.add_axes([0, 0, 1, 1]); ax.axis('off')
+_rend = fig.canvas.get_renderer()
+def _wid(txt, size, weight='normal'):
+    t = ax.text(0, 0, txt, fontsize=size, fontweight=weight)
+    w = _MplText.get_window_extent(t, _rend).width / fig.dpi; t.remove(); return w
+TFS, BFS, PADX, PADY, GAPT = 6.8, 6.3, .10, .09, .07
+TPITCH, BPITCH = TFS * 1.40 / 72, BFS * 1.55 / 72            # fixed line pitch: even rhythm whatever the glyphs in a line
+ASC_T, ASC_B = TFS * .74 / 72, BFS * .74 / 72
+def make_box(title, body, fc, ec, tc=None, bc=None, center=False):
+    tl, bl = title.split('\n'), body.split('\n')
+    wt = max(_wid(l, TFS, 'bold') for l in tl); wb = max(_wid(l, BFS) for l in bl if l.strip())
+    block = len(tl) * TPITCH + GAPT + len(bl) * BPITCH
+    return dict(tl=tl, bl=bl, fc=fc, ec=ec, tc=tc or PAL['ink'], bc=bc or PAL['ink2'], center=center,
+                w=max(wt, wb) + 2 * PADX, h=block + 2 * PADY, block=block)
+BLU, VIO, WHT = '#eef4fd', '#f4f1fb', '#ffffff'
+col1 = [make_box('STATIC PAIR   D01–D06, D20',
+                 'recipient · disease · DRI · HCT-CI\ndonor age, sex, parity · CMV · ABO\nHLA (R and D) · DPB1-TCE · B-leader\nKIR · HED · minor antigens', BLU, PAL['seq'][2]),
+        make_box('EVENT TIMELINE   D08–D13, D24',
+                 'conditioning · PtCy · CNI troughs\nMMF · antibiotics · CBC · CRP\nbilirubin · creatinine · vitals\nstool volume · rash % BSA\nsteroid, 2nd-line exposure', BLU, PAL['seq'][2]),
+        make_box('MODALITY ADAPTERS   D07, D14–D19',
+                 'Tier C: flow, plasma proteins,\nmicrobiome, transcriptome\nTier D: TCRβ repertoire,\nwhole-slide images, single-cell', VIO, PAL['violet'])]
+col2 = [make_box('PAIR ENCODER',
+                 'allele embeddings → separate\nGvH and HvG mismatch channels;\npretrained by donor matching\n(O-C3)', WHT, PAL['ink2']),
+        make_box('EVENT TOKENISER',
+                 'emb(code) + emb(value decile)\n+ φ(Δt, signed-log) + emb(source)\n"not done" is its own token', WHT, PAL['ink2']),
+        make_box('PER-MODALITY ENCODERS',
+                 'one summary token per assay,\nplaced at its t_known; masked-\nmodality objectives (O-M1, O-M2);\ndropout p ≈ 0.5, so none is\nrequired at inference', WHT, PAL['ink2'])]
+for r_ in range(3):                                          # rows share a height so the arrows are level
+    h = max(col1[r_]['h'], col2[r_]['h']); col1[r_]['h'] = col2[r_]['h'] = h
+w1, w2 = max(b['w'] for b in col1), max(b['w'] for b in col2)
+for b in col1: b['w'] = w1
+for b in col2: b['w'] = w2
+VG = .17; H = sum(b['h'] for b in col1) + 2 * VG
+bb_ = make_box('TIMELINE\nTRANSFORMER', 'causal, time-aware,\ncentre-adversarial\n\nlandmark mask\nt_known ≤ L\nenforced inside\nthe attention',
+               PAL['seq'][3], PAL['seq'][3], tc='white', bc='white', center=True)
+bb_['w'] = bb_['w'] + .05; bb_['h'] = H
+col4 = [make_box('HEADS at landmark L', 'multi-state, cause-specific hazards\nfor aGvHD II–IV and III–IV,\nsteroid-refractory, cGvHD,\nrelapse, NRM and death', '#eaf7f1', PAL['aqua']),
+        make_box('DERIVED QUANTITIES', 'organ-specific stages (O-S2)\nday +28 response (O-S1)\ncounterfactual contrast (O-S3)\ncumulative incidence,\ncalibration, net benefit', '#eaf7f1', PAL['aqua'])]
+w4 = max(b['w'] for b in col4)
+for b in col4: b['w'] = w4
+M, GAP_MIN = .07, .26
+FW = max(FULL, 2 * M + w1 + w2 + bb_['w'] + w4 + 3 * GAP_MIN)      # a wider fallback font widens the figure instead of overflowing it
+gap = (FW - 2 * M - w1 - w2 - bb_['w'] - w4) / 3
+LEG_H = .50; FH = H + LEG_H + .20
+fig.set_size_inches(FW, FH); ax.set_xlim(0, FW); ax.set_ylim(0, FH)
+x1 = M; x2 = x1 + w1 + gap; x3 = x2 + w2 + gap; x4 = x3 + bb_['w'] + gap; ytop = FH - .10
+def draw(b, x, y):                                           # y = top edge
+    ax.add_patch(FancyBboxPatch((x, y - b['h']), b['w'], b['h'], boxstyle='round,pad=0,rounding_size=.05',
+                                fc=b['fc'], ec=b['ec'], lw=.9))
+    y0 = y - (b['h'] - b['block']) / 2 if b['center'] else y - PADY               # centred boxes centre their text block vertically
+    xt, ha = (x + b['w'] / 2, 'center') if b['center'] else (x + PADX, 'left')
+    for i, l in enumerate(b['tl']):
+        ax.text(xt, y0 - ASC_T - i * TPITCH, l, fontsize=TFS, fontweight='bold', va='baseline', ha=ha, color=b['tc'])
+    yb = y0 - len(b['tl']) * TPITCH - GAPT
+    for k, l in enumerate(b['bl']):
+        if l.strip(): ax.text(xt, yb - ASC_B - k * BPITCH, l, fontsize=BFS, va='baseline', ha=ha, color=b['bc'])
+def arrow(xa, ya, xb, yb):
+    ax.add_patch(FancyArrowPatch((xa, ya), (xb, yb), arrowstyle='-|>', mutation_scale=8, color=PAL['ink2'], lw=.9, shrinkA=0, shrinkB=0))
+y = ytop; mids = []
+for b1, b2 in zip(col1, col2):
+    draw(b1, x1, y); draw(b2, x2, y); mids.append(y - b1['h'] / 2)
+    arrow(x1 + w1, mids[-1], x2, mids[-1]); arrow(x2 + w2, mids[-1], x3, mids[-1]); y -= b1['h'] + VG
+draw(bb_, x3, ytop)
+h4 = sum(b['h'] for b in col4) + VG; y = ytop - (H - h4) / 2
+for b in col4:
+    draw(b, x4, y); arrow(x3 + bb_['w'], y - b['h'] / 2, x4, y - b['h'] / 2); y -= b['h'] + VG
+for xk, fc, ec, lab in ((M, BLU, PAL['seq'][2], 'every patient (Tier A/B)'), (M + 2.55, VIO, PAL['violet'], 'optional at inference (Tier C/D)')):
+    ax.add_patch(FancyBboxPatch((xk, .22), .16, .16, boxstyle='round,pad=0,rounding_size=.03', fc=fc, ec=ec, lw=.9))
+    ax.text(xk + .24, .30, lab, fontsize=6.6, va='center', ha='left')
 finish(fig, 4, 'architecture',
-       'ALLO-FM. The backbone is the day-0-anchored clinical event timeline, which every transplant patient '
-       'has. Biology enters through modality adapters that each contribute a single summary token at the time '
-       'its result became known, are trained with modality dropout, and are therefore optional at inference. '
-       'Every head reads only tokens whose results were available at its landmark L; the mask is enforced '
-       'inside the attention and is tested in 8.11.')
+       'ALLO-FM. The backbone is the day-0-anchored clinical event timeline, which every transplant patient has. Biology '
+       'enters through modality adapters that each contribute one summary token at the time its result became known; they '
+       'are trained with modality dropout and are therefore optional at inference. Every head reads only tokens whose '
+       'results were available at its landmark L; the mask is enforced inside the attention and tested in section 8.11.')
 ''')
 
 code(r'''
@@ -117,11 +117,11 @@ def phi(dt, k=6):
     s = np.sign(dt) * np.log1p(np.abs(dt))
     return np.concatenate([[s]] + [[np.sin(s * 2 ** j), np.cos(s * 2 ** j)] for j in range(k)])
 
-EV = [(-10, 'busulfan dose', 'drug'), (-9, 'busulfan dose', 'drug'), (-7, 'fludarabine', 'drug'), (-1, 'TBI 2 Gy', 'proc'),
-      (0, 'graft infusion (CD34 5.1e6/kg)', 'proc'), (3, 'PtCy 50 mg/kg', 'drug'), (4, 'PtCy 50 mg/kg', 'drug'),
-      (5, 'tacrolimus start', 'drug'), (7, 'ST2/REG3a (t_known=+9)', 'assay'), (8, 'CRP 84 mg/L', 'lab'),
+EV = [(-10, 'busulfan, day −10', 'drug'), (-9, 'busulfan, day −9', 'drug'), (-7, 'fludarabine', 'drug'), (-1, 'TBI 2 Gy', 'proc'),
+      (0, 'graft infusion (CD34 5.1e6/kg)', 'proc'), (3, 'PtCy 50 mg/kg, day +3', 'drug'), (4, 'PtCy 50 mg/kg, day +4', 'drug'),
+      (5, 'tacrolimus start', 'drug'), (7, 'ST2 / REG3α, result day +9', 'assay'), (8, 'CRP 84 mg/L', 'lab'),
       (14, 'ANC engraftment', 'derived'), (16, 'stool 700 mL/d', 'stage'), (18, 'rash 12% BSA', 'stage'),
-      (20, 'GI biopsy taken (t_known=+23)', 'assay'), (21, 'methylprednisolone 2 mg/kg', 'drug*')]
+      (20, 'GI biopsy, signed out day +23', 'assay'), (21, 'methylprednisolone 2 mg/kg', 'drug*')]
 L = 21.0
 rows = []
 for t, lab, kind in EV:
@@ -129,46 +129,38 @@ for t, lab, kind in EV:
     rows.append(dict(event=lab, kind=kind, t_valid=t, t_known=tk, visible_at_L=(tk <= L), banned_proxy=kind.endswith('*')))
 ev = pd.DataFrame(rows)
 ev['usable for a day+21 prediction'] = np.where(ev.banned_proxy, 'NO (treatment proxy)', np.where(ev.visible_at_L, 'yes', 'NO (t_known > L)'))
-fig, axes = plt.subplots(1, 2, figsize=(FULL, 3.0), gridspec_kw=dict(width_ratios=[1.55, 1], wspace=.30))
-ax = axes[0]
+fig = plt.figure(figsize=(FULL, 3.6))
+axa = fig.add_axes([.285, .165, .395, .765]); axb = fig.add_axes([.715, .275, .20, .40])
+ax = axa; ax.set_axisbelow(True); ax.grid(axis='x', color=PAL['grid'], lw=.4)
 for i, r in ev.iterrows():
     ok = r['usable for a day+21 prediction'] == 'yes'
     c = PAL['aqua'] if ok else (PAL['bad'] if r.banned_proxy else PAL['orange'])
-    if r.t_known != r.t_valid:
-        ax.annotate('', xy=(np.log1p(r.t_known), i), xytext=(sx(r.t_valid), i),
-                    arrowprops=dict(arrowstyle='-|>', color=c, lw=1.0, mutation_scale=5, shrinkA=2, shrinkB=0))
-        ax.plot(np.log1p(r.t_known), i, 'o', color=c, ms=2.6, mfc='white', mew=.9)
-    ax.plot(sx(r.t_valid), i, 'o', color=c, ms=3.6)
-    ax.annotate(r.event, (sx(r.t_valid), i), textcoords='offset points', xytext=(-6, 0),
-                ha='right', va='center', fontsize=5.4, color=PAL['ink'])
-ax.axvline(np.log1p(L), color=PAL['ink'], ls='--', lw=.9)
-ax.text(np.log1p(L), -1.5, 'landmark\nL = day +21', fontsize=5.8, ha='center', va='top', fontweight='bold')
-ax.set_yticks([]); ax.set_xticks([sx(t) for t in (-10, 0, 7, 21, 60)])
-ax.set_xticklabels(['−10', '0', '+7', '+21', '+60'])
-ax.set_xlim(sx(-900), np.log1p(90)); ax.set_ylim(-3.2, len(ev) + 1.6)
-ax.set_xlabel('day (signed-log)'); ax.spines['left'].set_visible(False); panel(ax, 'a', dx=-.03)
-for j, (c, lab) in enumerate(((PAL['aqua'], 'legal input at L'),
-                              (PAL['orange'], 'result not known until after L'),
-                              (PAL['bad'], 'banned: treatment proxy'))):
-    ax.plot(sx(-800), len(ev) + 1.0 - j * .75, 'o', color=c, ms=3.6)
-    ax.annotate(lab, (sx(-800), len(ev) + 1.0 - j * .75), textcoords='offset points', xytext=(6, 0),
-                fontsize=5.5, va='center', ha='left', color=c, fontweight='bold')
-ax = axes[1]
+    if r.t_known != r.t_valid:                                       # the lag between "it happened" and "we knew"
+        ax.plot([r.t_valid, r.t_known], [i, i], color=c, lw=1.2, zorder=3)
+        ax.plot(r.t_known, i, 'o', ms=4.4, mfc='white', mec=c, mew=1.1, zorder=4)
+    ax.plot(r.t_valid, i, 'o', color=c, ms=4.6, zorder=5)
+ax.set_yticks(range(len(ev))); ax.set_yticklabels(ev.event); ax.tick_params(axis='y', length=0)
+ax.axvline(L, color=PAL['ink'], ls='--', lw=.9, zorder=2)
+ax.text(L + .5, -1.0, 'landmark L = day +21', fontsize=6.4, ha='left', va='center', fontweight='bold')
+ax.set_xticks([-10, 0, 7, 14, 21]); ax.set_xticklabels(['−10', '0', '+7', '+14', '+21'])
+ax.set_xlim(-12, 33); ax.set_ylim(-1.7, len(ev) - .4); ax.set_xlabel('day relative to graft infusion'); ax.spines['left'].set_visible(False)
+ax.legend([plt.Line2D([], [], color=c, marker='o', ls='none', ms=4.6) for c in (PAL['aqua'], PAL['orange'], PAL['bad'])] +
+          [plt.Line2D([], [], color=PAL['ink2'], marker='o', ls='-', ms=4.4, mfc='white', mew=1.1)],
+          ['legal input at L', 'result known only after L', 'banned: treatment proxy', 'when the result is known'],
+          loc='upper left', labelspacing=.35, handletextpad=.3)
+panel(ax, 'a')
 TT = np.array([-10, -1, 0, 1, 3, 7, 14, 21, 60, 100, 365])
-P = np.array([phi(t) for t in TT]); nrm = np.linalg.norm(P, axis=1)
-sim = P @ P.T / (nrm[:, None] * nrm[None, :])
-im = ax.imshow(sim, cmap='Blues', vmin=-.2, vmax=1)
-ax.set_xticks(range(len(TT))); ax.set_xticklabels(TT, fontsize=5.8, rotation=90)
-ax.set_yticks(range(len(TT))); ax.set_yticklabels(TT, fontsize=5.8); ax.grid(False)
-ax.set_xlabel('day'); ax.set_ylabel('day'); panel(ax, 'b', dx=-.26)
-cb = plt.colorbar(im, ax=ax, fraction=.046, pad=.03); cb.ax.tick_params(labelsize=5.8)
-cb.set_label('similarity of $\\varphi(\\Delta t)$', fontsize=6.2)
+P = np.array([phi(t) for t in TT]); nrm = np.linalg.norm(P, axis=1); sim = P @ P.T / (nrm[:, None] * nrm[None, :])
+im = axb.imshow(sim, cmap='Blues', vmin=-.2, vmax=1)
+axb.set_xticks(range(len(TT))); axb.set_xticklabels(TT, rotation=90); axb.set_yticks(range(len(TT))); axb.set_yticklabels(TT)
+axb.set_xlabel('day'); axb.set_ylabel('day'); axb.grid(False); panel(axb, 'b')
+cax = axb.inset_axes([1.07, 0, .07, 1]); cb = fig.colorbar(im, cax=cax); cb.set_label('similarity of $\\varphi(\\Delta t)$'); cb.ax.tick_params(labelsize=6.4)
 finish(fig, 5, 'knowledge_time_and_time_encoding',
-       'Knowledge time and time encoding. (a) One patient\'s timeline. An event is a legal input at landmark L '
-       'only if its result was known by then, which is not the same as having happened by then: the day-20 '
-       'biopsy signs out on day +23 and is inadmissible, and the day-21 steroid order is banned outright as a '
-       'proxy for the outcome. (b) The signed-log time encoding keeps early days distinguishable (day +7 vs '
-       '+14 are different decisions) while compressing late follow-up, where a week does not matter.')
+       'Knowledge time and time encoding. (a) One patient timeline. Filled marker: when an event happened; open marker: when its '
+       'result became known. An event is a legal input at landmark L only if its result was known by then, which is not the same '
+       'as having happened by then: the day-20 biopsy signs out on day +23 and is inadmissible, and the day-21 steroid order is '
+       'banned outright as a proxy for the outcome. (b) The signed-log time encoding of the model keeps early days distinguishable '
+       '(day +7 and +14 are different decisions) and compresses late follow-up.')
 display(md_table(ev[['event', 'kind', 't_valid', 't_known', 'usable for a day+21 prediction']]))
 ''')
 
