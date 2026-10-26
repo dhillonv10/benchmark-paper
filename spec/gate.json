@@ -1,0 +1,37 @@
+{
+  "version": "ALLO-FM v1",
+  "primary_task": "B1 \u2014 grade II\u2013IV aGvHD by day +100 from the day +7 state, leave-centre-out across >= 20 centres",
+  "primary_metric": "IPCW time-dependent AUROC at day 100, competing risks = death and relapse",
+  "baselines_to_beat": [
+    "MAGIC MAP (ST2+REG3a day-7 algorithm) + clinical covariates",
+    "gradient-boosted trees on 20-40 registry variables (tuned, same splits)",
+    "random-weight twin of the backbone",
+    "no-pretraining (supervised only)"
+  ],
+  "level2_gate": {
+    "delta_auroc_min": 0.03,
+    "ci_over_centres_excludes_zero": true,
+    "fraction_centres_improved_min": 0.7,
+    "beats_random_twin": true,
+    "beats_no_pretraining": true,
+    "bh_across_family": true
+  },
+  "level3_additional": {
+    "calibration_slope": [
+      0.8,
+      1.25
+    ],
+    "net_benefit_positive_thresholds": [
+      0.1,
+      0.4
+    ],
+    "temporal_validation_required": true,
+    "min_n": "computed per task by riley_n(P, target AUROC, prevalence)"
+  },
+  "stopping_rule": "if Level 1 is not reached on B1 at stage-1 scale, publish the negative result and do not proceed to stage 3",
+  "frozen": {
+    "seed": 20261026,
+    "splits": "spec/splits_*.json",
+    "label_functions": "section 3.6 of this notebook"
+  }
+}

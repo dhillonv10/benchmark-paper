@@ -1,0 +1,12 @@
+specimen,domains,d-30/pre,d0 graft,d+7,d+14,d+21,d+28,d+60,d+100,d+180,d+365,at onset,onset+7d,at 2nd line
+"Plasma / serum (EDTA + serum, 2×1 mL aliquots)",D15,X,X,X,X,X,X,X,X,X,X,X,X,X
+Whole blood PAXgene RNA (2.5 mL),D17,X,X,X,X,,X,,X,,,X,X,
+PBMC viable cryopreserve (≥10×10⁶),D14/D16/D17,X,X,,X,,X,X,X,X,X,X,,X
+"Flow immune phenotyping (fresh, harmonised panel)",D14,X,X,X,X,X,X,X,X,X,X,X,,X
+Graft aliquot (cells + cryopreserve),D07,,X,,,,,,,,,,,
+"Stool (−80 °C, no preservative or OMNIgene)",D18,X,X,X,X,X,X,X,X,,,X,X,
+Lineage-specific chimerism (CD3 / myeloid),D14,,,,,,X,X,X,X,X,,,
+Sorted T-cell subsets → RNA (CD4 Tconv/CD8/Treg),D17,,,,X,,X,,X,,,X,,
+TCRβ repertoire (bulk),D16,X,X,,,,X,X,X,,X,X,,X
+Tissue biopsy (GI / skin / liver) + WSI + RNA,D17/D19,,,,,,,,,,,X,,X
+Germline DNA (recipient + donor),D20,X,,,,,,,,,,,,
