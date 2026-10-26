@@ -1,0 +1,9 @@
+# Delivery/build artefacts derived from committed sources.
+# figures/ holds the PDFs and PNGs themselves; the zip is only for sending them.
+figures_ALLO_FM.zip
+*.zip
+
+# Notebook and Python scratch
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
