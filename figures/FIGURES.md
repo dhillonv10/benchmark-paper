@@ -34,13 +34,13 @@ Files: `Fig05_knowledge_time_and_time_encoding.pdf`, `Fig05_knowledge_time_and_t
 
 ## Fig 6 — training_requirements
 
-Training requirements, computed from the data specification. (a) Event tokens per patient, cumulative across data tiers: the EHR timeline (Tier B) supplies nearly all of them, and the deep assays add almost none while costing the most to obtain. (b) Compute-optimal model size at 20 tokens per parameter: a realistic corpus implies tens to low hundreds of millions of parameters, not billions (Tier A+B+C lies on the A+B line). (c) Pretraining cost at $2 per A100-hour, 30% utilisation and 4 epochs: one run (100,000 patients, Tier A+B), the whole enumerated programme (§7.2 table), and a general 7B language model. Compute is not the binding constraint; assay and collection cost is (§9.8).
+What one institution has to train. (a) Event tokens per patient, cumulative across data tiers: the EHR timeline (Tier B) supplies nearly all of them, and the deep assays add almost none. (b) The compute-optimal size of a model trained from scratch on a centre's own corpus (up to 1,500 patients) is a fraction of a million parameters, two to three orders below a released 141 M-parameter model (dashed), which is why the plan adapts a released model with a small head rather than pretraining. (c) GPU time on one A100 at 30% utilisation: a tiny model from scratch, one LoRA fine-tune of the released model, the whole enumerated programme, and a general 7B language model for scale. Compute is not the binding constraint.
 
 Files: `Fig06_training_requirements.pdf`, `Fig06_training_requirements.png`
 
 ## Fig 7 — gvhd_bench_structure
 
-GvHD-Bench v1.0. (a) The 40 tasks, grouped by family and by the landmark at which the prediction is made. Marker shape is data readiness and colour is the powered verdict; tasks that are not a single-AUROC comparison (donor ranking, counterfactual contrasts, representation and robustness audits) are grey. (b) For the 26 tasks with a numeric requirement: patients accessible divided by patients needed to demonstrate a +0.03 AUROC gain over the task baseline. Bars left of 1 are tasks the field cannot currently settle; they are labelled, not omitted.
+GvHD-Bench v1.0. (a) The 40 tasks, grouped by family and by the landmark at which the prediction is made. Marker shape is data readiness and colour is the feasibility verdict at one institution (up to 1,500 patients, about 420 with banked specimens); tasks that are not a single-AUROC comparison (donor ranking, counterfactual contrasts, representation and robustness audits) and research-only tasks are grey. (b) For the 25 tasks with a numeric requirement: the smallest AUROC gain over the task baseline that the eligible patients of one centre can show with 80% power. The dotted line at +0.05 separates runnable from estimable; tasks to its right are labelled, not omitted.
 
 Files: `Fig07_gvhd_bench_structure.pdf`, `Fig07_gvhd_bench_structure.png`
 
@@ -64,19 +64,19 @@ Files: `Fig10_clinical_translation.pdf`, `Fig10_clinical_translation.png`
 
 ## Fig 11 — sample_size_and_power
 
-Three different sample-size questions. (a) Precision: the 95% confidence interval of a single AUROC against the number of patients. (b) Power: the paired DeLong test for an improvement of 0.02 to 0.05 AUROC over a correlated baseline, the regime any foundation-model claim lives in; lines are the closed form, circles are a Monte-Carlo DeLong test; solid lines are scores correlated at 0.85, dashed at 0.60. (c) Development: the Riley minimum sample size against the number of candidate parameters, which is why head size sets the data requirement.
+What one institution's cohort can resolve. (a) Precision: the 95% confidence interval of a single AUROC against the number of patients; at the ceiling cohort of 1,500 it is about ±0.03. (b) Power: the paired DeLong test for an improvement of 0.02 to 0.05 AUROC over a correlated baseline, up to the ceiling cohort; lines are the closed form, circles are a Monte-Carlo DeLong test; solid lines are scores correlated at 0.85, dashed at 0.60. A gain of 0.03 is within reach at score correlation 0.85; 0.02 is not. (c) Development: the Riley minimum sample size against the number of candidate parameters of the head, with the ceiling cohort dotted: it supports a head of roughly 15 to 25 parameters, which is why this plan adapts a model and fits a small head rather than training a large one.
 
 Files: `Fig11_sample_size_and_power.pdf`, `Fig11_sample_size_and_power.png`
 
-## Fig 12 — data_landscape_and_accrual
+## Fig 12 — one_institution_accrual
 
-What exists against what is needed, and how long it would take. (a) Patients available from each real source on a log scale, against the Riley minimum for two head sizes: public transcriptomic resources are orders of magnitude short, registry extracts are not. (b) Projected time to reach the patients required for each task, by route. Tasks that need protocolised biospecimens cannot be served by a registry extract at all, which is why the staged plan buys the registry tasks first and the biobank tasks second.
+What a single institution can reach, and how fast. (a) The largest head the cohort supports (Riley criteria, AUROC 0.72, prevalence 0.35) against years of accrual, at 100, 200 and 300 transplants a year, for EHR timelines (solid) and for prospectively banked specimens at 70% usable (dashed). A head of 10 parameters is reached within about 3 years of EHR history at 200 a year; specimens take longer. (b) Years of accrual each task needs for a head of 10 parameters and a +0.05 gain over its clinical baseline, by annual volume: green within three years, blue within the 7.5-year ceiling cohort, orange longer.
 
-Files: `Fig12_data_landscape_and_accrual.pdf`, `Fig12_data_landscape_and_accrual.png`
+Files: `Fig12_one_institution_accrual.pdf`, `Fig12_one_institution_accrual.png`
 
 ## Fig 13 — transcriptome_requirements
 
-Labelled transcriptomes needed at diagnosis (closed form, validated against simulation in §9.4). (a) Learning curve of a head on the whole transcriptome against heads on a 64-dimensional adapter embedding that retains a fraction kappa of the signal: the embedding wins at the label counts a consortium can reach, and the whole-transcriptome head approaches its ceiling only at several hundred thousand profiles. Dashed: the within-centre ceiling. (b) Labelled profiles an adapter needs to add +0.03 AUROC to a baseline, against the gain the transcriptome could add at its ceiling; a weak ceiling gain cannot be realised at any n once centres only partly share the signal. (c) The plateau at a new centre falls as the shared fraction rho falls, and more training centres push it toward its limit.
+Labelled transcriptomes at diagnosis, inside the ceiling cohort (closed form, validated against simulation in §9.4). (a) Learning curves at a ceiling AUROC of 0.80: a head on the whole transcriptome is still at chance over the whole range a centre can reach, a 64-dimensional adapter head is slow, and a head of 10 parameters on a frozen adapter is close to its plateau within a few hundred profiles; the dotted line marks the 420 patients with banked specimens. (b) Labelled profiles a 10-parameter head needs to add +0.03 AUROC to a baseline, against the gain the transcriptome could add at its ceiling, with the 1,500-patient ceiling and the 420 specimen patients marked: small ceiling gains cannot be realised at one centre. (c) What a second centre would see: the plateau falls as the shared fraction rho falls, and more training centres push it toward its limit; this is the reason a single-centre result is a claim about that centre.
 
 Files: `Fig13_transcriptome_requirements.pdf`, `Fig13_transcriptome_requirements.png`
 
@@ -88,19 +88,25 @@ Files: `Fig14_longitudinal_design.pdf`, `Fig14_longitudinal_design.png`
 
 ## Fig 15 — centres_validation_subgroups
 
-How many centres, how many validation patients, how large a subgroup. (a) Centres needed for the adopted gate to have 80% power for a true gain of +0.03, against the between-centre SD of the gain, for three centre sizes: once heterogeneity dominates, more centres help and more patients per centre do not. The dotted line is the gate's minimum. (b) Patients for a Level-3 validation (calibration slope SE 0.10, O/E SE 0.10, AUROC half-width 0.05) against prevalence, set against what one centre collects in three years and what a 20-centre consortium collects in one. (c) Total cohort at which a subgroup of a given share has enough patients to detect an equal-opportunity gap in sensitivity of 0.10 or 0.05, against two registry-extract sizes.
+Centres, validation, and subgroups. (a) Context for the benchmark's Level 2, not the plan of this paper: centres needed for the gate to have 80% power for a true gain of +0.03, against the between-centre SD of the gain, for three centre sizes; once heterogeneity dominates, more centres help and more patients per centre do not. (b) Patients for a Level-3 silent-mode validation (calibration slope SE 0.10, O/E SE 0.10, AUROC half-width 0.05) against prevalence, with the 1,500-patient ceiling and three years of one centre's transplants marked. (c) The size of a subgroup at one centre against the roughly 1,000 patients that detecting a 0.10 sensitivity gap needs: no subgroup of a single centre reaches it, so a single-centre equity audit is descriptive.
 
 Files: `Fig15_centres_validation_subgroups.pdf`, `Fig15_centres_validation_subgroups.png`
 
-## Fig 16 — data_bill_of_materials
+## Fig 16 — one_institution_capacity
 
-The data bill of materials. (a) Patients required in each data layer for three packages, with the number of centres at which the gate of section 8.12 has 80% power; the packages differ in what they must demonstrate (a single honest test of the primary claim; several claims with a subgroup audit; a Level-3 claim with prospective validation) and in the between-centre heterogeneity planned for (tau = 0.02, 0.03, 0.04). (b) Programme cost by package, split into specimen collection and coordination, assays, centre set-up and data engineering, and compute; unit costs are planning figures. Compute is the smallest bar by orders of magnitude.
+What one institution can resolve. (a) The smallest paired AUROC gain over a correlated baseline shown with 80% power (solid) and the half-width of one AUROC's 95% interval (dashed), at the cohort sizes a centre actually has: 120 biopsies, 420 patients with banked specimens, a 600-patient temporal test set, a 900-patient development set, and the 1,500-patient ceiling. (b) The largest head, in candidate parameters, that those cohorts support: about 6 on the 420 patients with specimens and about 14 on the 900-patient development set (AUROC 0.72, prevalence 0.35). (c) Operating characteristics of the single-centre gate (lower bound of the paired interval at least +0.01 on a temporal test set): at 600 test patients it passes a true gain of +0.05 89% of the time, +0.03 35% and +0.01 or less about 2%. Dotted lines mark 80% and 5%.
 
-Files: `Fig16_data_bill_of_materials.pdf`, `Fig16_data_bill_of_materials.png`
+Files: `Fig16_one_institution_capacity.pdf`, `Fig16_one_institution_capacity.png`
 
-## Fig 17 — pilot_results
+## Fig 17 — one_institution_data_plan
+
+The one-institution data plan. (a) Three nested packages, none above the 1,500-patient ceiling: S0 uses the EHR timeline only; S1 adds specimens banked on routine draws for three years, sequenced as a case-cohort; S2 adds a weekly trajectory cohort inside S1. Counts are computed from the sampling schedule of section 4.4 and the onset distribution of section 9.5. (b) Accrual at 200 transplants a year: EHR timelines reach the ceiling in 7.5 years (the first 4.5 years are retrospective), and patients with specimens (70% usable) reach 420 in three.
+
+Files: `Fig17_one_institution_data_plan.pdf`, `Fig17_one_institution_data_plan.png`
+
+## Fig 18 — pilot_results
 
 The pilot this paper is built on (9 public studies, 838 samples; numbers from the earlier notebook in this repository). (a) Leave-one-study-out transfer with plain normalised genes: tissue biopsies transfer across laboratories and organs, blood and sorted T cells do not. (b) Frozen Geneformer (GF) at three sizes against its own random-weight twins and against plain genes: one size beats its twin, none beats the simple baseline, and the largest model is not the best. (c) A zero-parameter score written down in advance, the mean expression of the interferon-gamma and allograft-rejection gene sets, matches fitted models in inflamed tissue and fails in sorted blood T cells.
 
-Files: `Fig17_pilot_results.pdf`, `Fig17_pilot_results.png`
+Files: `Fig18_pilot_results.pdf`, `Fig18_pilot_results.png`
 

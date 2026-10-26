@@ -28,7 +28,7 @@ Before this specification we built and ran the opposite design: expression as th
 ''')
 
 code(r'''
-# ----------------------------------------------------------------------------- Figure 17: the pilot results that this paper is built on (numbers from the earlier notebook)
+# ----------------------------------------------------------------------------- Figure 18: the pilot results that this paper is built on (numbers from the earlier notebook)
 PILOT_LOSO = [('PBMC T cells', .790, 'blood'), ('CD8 subsets', .413, 'blood'), ('PtCy T cells', .577, 'blood'), ('sc pseudobulk', .595, 'blood'),
               ('colon (1)', .826, 'tissue'), ('colon (2)', .833, 'tissue'), ('skin', .754, 'tissue')]
 FM_ARMS = [('plain\ngenes', .756, None), ('GF\n10M', .498, .547), ('GF\n104M', .678, .614), ('GF\n316M', .615, .652)]
@@ -72,7 +72,7 @@ ax.set_xticks(range(5)); ax.set_xticklabels([n for n, _, _ in ZP], rotation=35, 
 ax.set_ylim(0, 1.0); ax.set_ylabel('AUROC, no fitting\n(IFN-γ / allograft score)'); panel(ax, 'c')
 ax.legend([plt.Rectangle((0, 0), 1, 1, color=TC), plt.Rectangle((0, 0), 1, 1, color=BC)], ['tissue', 'blood / T cells'],
           loc='upper right', handlelength=1.0, labelspacing=.3)
-finish(fig, 17, 'pilot_results',
+finish(fig, 18, 'pilot_results',
        'The pilot this paper is built on (9 public studies, 838 samples; numbers from the earlier notebook in this repository). '
        '(a) Leave-one-study-out transfer with plain normalised genes: tissue biopsies transfer across laboratories and organs, blood '
        'and sorted T cells do not. (b) Frozen Geneformer (GF) at three sizes against its own random-weight twins and against plain '
@@ -113,10 +113,10 @@ A benchmark is a claim about reproducibility, so it has to ship as software. Wit
 
 | Decision | Choice | Why, and what would change it |
 |---|---|---|
-| Backbone input | **the day-0-anchored clinical event timeline** | it is the only modality with registry-scale n and high cross-centre shared structure (§2.1, §10); if a prospective study showed blood transcriptomes transferring across centres at ρ ≳ 0.8, an omics-first backbone would become defensible |
+| Backbone input | **the day-0-anchored clinical event timeline** | it is the only modality every patient has, and the one with high cross-centre shared structure (§2.1, §10); if a prospective study showed blood transcriptomes transferring across centres at ρ ≳ 0.8, an omics-first backbone would become defensible |
 | Sequence model | decoder-style transformer with explicit continuous-time encoding; **not** a fixed-grid RNN | visit times are irregular and clinically meaningful; a fixed grid discards exactly the information that distinguishes day +7 from day +14 |
-| Size | **50–150 M parameters** | compute-optimal at the realistic corpus (§7.2); larger is data-limited and unfalsifiable at this n |
-| Pretraining objectives | next-event + time-to-event + masked-value (O-T1/T2/T3) | the time-to-event objective is the closest to every downstream question, and is the one with published label-efficiency gains ✓ |
+| What is trained at the centre | **a tiny model from scratch (≈ 0.5 M parameters) or, preferably, a released pretrained timeline model kept frozen, with a head of 5–25 parameters** (LoRA only if the data allow) | 1,500 patients support a head of 15–25 parameters and compute-optimal pretraining of well under a million (§7.2, §9.1); pretraining at tens of millions of parameters needs a network and is not part of this plan |
+| Pretraining objectives (for whoever pretrains) | next-event + time-to-event + masked-value (O-T1/T2/T3) | the time-to-event objective is the closest to every downstream question, and is the one with published label-efficiency gains ✓; a single centre inherits them from a released model rather than training them |
 | Omics | **adapters with modality dropout**, one summary token each, optional at inference | a model that requires single-cell data for every patient is untrainable and undeployable this decade |
 | Heads | one **multi-state** head over cause-specific hazards | keeps the tasks mutually consistent; prevents a model claiming 40 % aGvHD risk and 90 % GvHD-free survival at once |
 | Centre invariance | gradient-reversal / CORAL penalty, tuned against the two-axis score, **not** against downstream AUROC | tuning invariance on the test question is circular; the two-axis score (biology kept, centre discarded) is measurable without labels |
@@ -129,14 +129,14 @@ md(r'''
 | Stage | Work | Data needed | Go / no-go |
 |---|---|---|---|
 | **0 · Specification** | This document: data dictionary, label functions, task registry, metrics, gate, harness (all exported to `spec/`) | none | Done when the notebook runs end-to-end and the exported files validate |
-| **1 · One-centre Tier A+B** | Build the OMOP + HCT-extension extract for one large centre (10³–10⁴ transplants); implement O-T1/O-T2/O-T3; run tasks A1–A5, B1–B6, C1–C5 with leave-era-out | single-centre IRB | Proceed only if the timeline model reaches **Level 1** against tuned trees on registry variables. **Also measure the three quantities the plan rests on**: the between-centre SD τ of the gain (sets the centre count, §9.6), the shared fraction ρ of the signal (sets the plateau, §9.4) and label reliability κ (§9.7) |
-| **2 · Multi-centre Tier A** | CIBMTR (and/or EBMT) extract; pretrain at scale; leave-centre-out and leave-registry-out; run the scaling ablation | registry study proposal + DUA | Proceed only if **Level 2** is reached on the primary task B1, with the random-weight twin and no-pretraining arms both beaten |
-| **3 · Tier C adapters** | MAGIC / BMT CTN biorepository: biomarker, flow and microbiome adapters; tier-ablation task G4 | consortium collaboration | Proceed if an adapter adds ≥ 0.02 AUROC over Tier A+B at the same n, out of centre. Package size: the **minimum-viable** row of the data bill (§9.8) |
+| **1 · One institution, S0 (EHR timelines, ≤ 1,500 patients)** | Build the OMOP + HCT-extension extract for one large centre; implement the label functions and the harness; run the EHR-based tasks (§9.8 lists them) with the model ladder L0–L2 under the few-shot protocol (§8.15) and a temporal split | single-centre IRB; a data-use agreement for a released model if one is used | Proceed only if **Level 1C** is reached against the tuned simple model. **Also measure the quantities the plan rests on**: label reliability κ (§9.7), the shared fraction ρ and the between-centre SD τ (needs a second centre; §9.6) |
+| **2 · One institution, S1/S2 (banked specimens, 420 patients; weekly cohort of 300)** | Plasma biomarkers, blood RNA and tissue RNA + slide at the schedule of §4.4; B1 against the MAGIC algorithm; the tissue-transcriptome claims of §9.4; the trajectory cohort of §9.5 | prospective consent; the S1/S2 rows of §9.9 | Proceed if a frozen adapter with a ≤ 10-parameter head adds ≥ 0.02 AUROC over Tier A+B on the temporal test set, or report the interval |
+| **3 · A network, federated** | The same code at ≥ 20 centres, each running ingest, labels, splits and metrics locally and sharing summary statistics; the benchmark's Level 2 (§8.12); only now a model may be pretrained at scale | a consortium agreement; not part of this plan | Level 2 only if the adopted gate (§8.12) is passed |
 | **4 · Tier D and mechanism** | Repertoire, single-cell, pathology adapters on nested sub-cohorts; tasks C7, F1–F3 | prospective protocol (§4.4), with the nested weekly trajectory cohort of §9.5 | Research output regardless; no deployment claim |
-| **5 · Prospective silent mode** | Model runs without influencing care; calibration drift monitored; subgroup audit | prospective approval | Level 3 only if calibration and net benefit hold prospectively |
+| **5 · Prospective silent mode** | Model runs without influencing care; calibration drift monitored; subgroup audit (needs the pooled cohort of stage 3) | prospective approval; about 3 years of one centre's transplants for the validation of §9.7 | Level 3 only if calibration and net benefit hold prospectively |
 | **6 · Interventional trial** | Randomise the *decision* (e.g. model-guided pre-emptive therapy vs standard) | trial | Only this licenses "improves outcomes" |
 
-**Publish the negative.** If stage 1 or 2 fails its gate, the result is a paper: *"a clinical foundation model does not beat tuned registry baselines for GvHD prediction, at this scale, under these splits."* That is the output our pilot produced in the transcriptomic setting, and it was worth reporting.
+**Publish the negative.** If stage 1 fails Level 1C, or stage 2 shows no gain, the result is a paper: *"adapting a released clinical foundation model does not beat tuned registry baselines for GvHD prediction at one institution, under these splits."* That is the output our pilot produced in the transcriptomic setting, and it was worth reporting.
 
 ## 11.3 What makes this fail (pre-mortem)
 1. **Registry labels are too coarse.** If only maximum aGvHD grade is recorded, landmark tasks B1–B4 collapse. *Mitigation*: the daily-staging requirement in D13/D23; use centres with day-level data for the early-warning task.
@@ -164,7 +164,9 @@ md(r'''
 7. **Simulation cannot validate the premises.** Figure 2 shows *that* pretraining depends on shared structure; only real multi-centre data can show *whether* GvHD data has it.
 8. **The sample-size calculators are models, with stated assumptions.** The learning curve of §9.4 assumes a linear head, an equal-covariance binormal signal and a retained-signal fraction κ that is an assumption until tasks F2/G4 measure it; the paired-power and validation sizes assume equal-variance binormal scores; the longitudinal results assume a prodrome length and a single-draw reliability that are properties of each assay, to be measured with bridging and replicate samples. Each was checked against simulation where the model is exact and stress-tested where it is not, but none was checked against real GvHD data, because that data does not yet exist.
 9. **The three quantities that set the plan are unmeasured**: the between-centre SD τ of the gain, the cross-centre shared fraction ρ, and label reliability. We plan at τ = 0.02/0.03/0.04 and ρ = 0.8, and stage 1 measures them; if they are worse, §9.4, §9.6 and §9.8 give the revised requirement.
-10. **Unit costs, subgroup shares and onset-time distribution are planning assumptions (†).** The cost of the data bill is an order of magnitude, shown with a ×0.5/×2 range, not a budget.
+10. **The plan is one institution, and its claims are about that institution.** The ceiling cohort (1,500), the specimen cohort (420), the eligible fractions of each task, the subgroup shares and the onset-time distribution are planning assumptions (†). The result cannot speak to other centres, to subgroups, or to gains below about +0.03; those need a network (§9.6, stage 3).
+11. **The foundation-model claim depends on a released model.** The plan assumes a pretrained timeline model that can be obtained under a data-use agreement and whose vocabulary can be mapped from the centre's records (OMOP). If none can be obtained, the plan falls back to the tuned simple model (L0) and the tiny model from scratch (L1), and the foundation-model claim is simply not tested; the benchmark, the data plan and the single-centre claim at Level 1C are unaffected.
+12. **The prior-art search of §1.1 was not systematic.** It supports "we found no few-shot or foundation-model benchmark for GvHD", not "none exists".
 
 ---
 # 13 · Conclusion
@@ -201,11 +203,11 @@ def _bench_md():
          '**Competing events**: death and relapse are events, not censoring, for every GvHD endpoint.', '',
          '## 3 Tasks', '',
          f'{len(reg_full)} tasks in {reg_full.family.nunique()} families. '
-         f"Powered at accessible n: {(reg_full.verdict == 'POWERED').sum()}; "
-         f"under-powered: {(reg_full.verdict == 'UNDER-POWERED').sum()}; "
-         f"not single-AUROC tasks: {(reg_full.verdict == '-').sum()}.", '',
+         f"At one institution (up to {N_CAP:,} patients, {N_SPEC} with banked specimens): runnable {(reg_full.one_inst_verdict == 'RUNNABLE').sum()}; "
+         f"estimable only: {(reg_full.one_inst_verdict == 'ESTIMABLE').sum()}; out of reach: {(reg_full.one_inst_verdict == 'OUT OF REACH').sum()}; "
+         f"no single-AUROC verdict: {(reg_full.one_inst_verdict == '-').sum()}.", '',
          'Full machine-readable definitions: `task_registry.csv` (all fields) and `task_cards.csv`',
-         '(readiness, accessible n, requirements, verdict). Columns are documented in notebook 8.3-8.4.', '']
+         '(readiness, eligible patients at one centre, requirements, verdict). Columns are documented in notebook 8.3-8.4.', '']
     for fam in reg_full.family.unique():
         L.append(f'### Family {fam}'); L.append('')
         for _, r in reg_full[reg_full.family == fam].iterrows():
@@ -219,9 +221,9 @@ def _bench_md():
                   f'- readiness: {r.readiness} · tier needed: {r["tier needed"]}',
                   f'- assumed prevalence: {r["assumed prevalence"]} · target AUROC: {r["target AUROC"]}'
                   f' · achievable (notebook 3.2): {r["achievable AUROC"] or "n/a"}',
-                  f'- n accessible (est.): {r["n accessible (est.)"]:,} · n to develop (50-param): '
-                  f'{r["n to develop (50-param)"]} · n to show +0.03: {r["n to show +0.03"]}',
-                  f'- **verdict: {r.verdict}**', '']
+                  f'- eligible patients at one centre: {r["one_inst_n"]:,} · n for a 10-parameter head: '
+                  f'{r["n to develop (10-param head)"]} · n to show +0.03: {r["n to show +0.03"]}',
+                  f'- **verdict at one centre: {r.one_inst_verdict}**', '']
     L += ['## 4 Metrics', '',
           '- Discrimination: IPCW cumulative/dynamic time-dependent AUROC at the horizon, competing events excluded',
           '  from the control set. Implementation and validation: notebook 8.6.',
@@ -294,37 +296,36 @@ display(md_table(figman[['figure', 'slug', 'files']]))
 
 
 code(r'''
-# ----------------------------------------------------------------------------- export the data requirements as a standalone document + CSVs
+# ----------------------------------------------------------------------------- export the data requirements as a standalone document + CSV
 T = lambda df, **kw: md_table(df, **kw).data
 def _req_md():
-    q = bom[bom.package == 'minimum viable']
-    L = ['# Data requirements for ALLO-FM and GvHD-Bench v1.0', '',
-         f'Generated by `ALLO_FM_GvHD_foundation_model.ipynb` on {time.strftime("%Y-%m-%d", time.gmtime())}. Every number below is computed in the notebook (section 9); '
-         'items marked † are planning assumptions (unit costs, subgroup shares, onset-time distribution, retained-signal fraction kappa).', '',
-         '## 1 Headline requirements', '',
-         f'- **Paired comparison**: showing a gain of +0.03 AUROC over a correlated baseline needs about {n80(.03, .85):,} patients (score correlation 0.85; {n80(.03, .6):,} at 0.60).',
-         f'- **Development**: a 768-parameter head at AUROC 0.72 and prevalence 0.35 needs {riley_n(768, .72, .35)["n"]:,} patients (Riley); a 50-parameter head {riley_n(50, .72, .35)["n"]:,}.',
-         f'- **Transcriptome at diagnosis**: a whole-transcriptome head needs {min(n_whole, n_whole75):,.0f}-{max(n_whole, n_whole75):,.0f} labelled profiles to come within 0.02 AUROC of its ceiling; a 64-d adapter embedding retaining 90% of the signal needs {min(n_adapt, n_adapt75):,.0f}-{max(n_adapt, n_adapt75):,.0f}.',
-         f'- **Centres**: {K_required(.03, .02, 300)} centres of ~300 patients give the gate 80% power for a +0.03 gain at between-centre SD 0.02; {K_required(.03, .04, 300)} at 0.04.',
-         f'- **Longitudinal**: with single-draw reliability 0.5, {k_needed(.80, .5, .02)} draws per window recover the oracle AUROC to within 0.02; sampling interval must be well under the prodrome length (every 2-3.5 days for a 10-day prodrome).',
-         f'- **Validation (Level 3)**: {vtab[(vtab.AUROC == .75) & (vtab.prevalence == .15)].patients.iloc[0]:,} patients ({vtab[(vtab.AUROC == .75) & (vtab.prevalence == .15)].events.iloc[0]:,} events) at AUROC 0.75 and prevalence 0.15.',
-         f'- **Compute**: the whole training programme is about {fmt_h(PROG_H)} on one A100 ({fmt_usd(PROG_H * USD_PER_H)}); data collection and assays cost orders of magnitude more.', '',
-         '## 2 The transcriptome at diagnosis', '', T(plan), '', T(txt_disp), '',
-         '## 3 Longitudinal design', '', T(kn), '', T(prod), '', T(disp_sched), '',
-         '## 4 Centres', '', T(ktab), '', T(dex), '',
-         '## 5 Validation, subgroups and label noise', '', T(vtab[['AUROC', 'prevalence', 'patients', 'events', 'binding criterion']]), '', T(sg_disp), '', T(ltab), '',
-         '## 6 The data bill of materials', '', T(show[['layer', 'package', 'patients', 'centres', 'specimens per patient', 'specimens', 'storage_TB', 'assays + collection (USD)', 'binding']]), '', T(cd, index=True), '',
-         '## 7 Assumptions (†)', '',
-         '- Unit costs (USD): ' + ', '.join(f'{k} {v:,}' for k, v in UNIT.items()) + '.',
-         '- Usable fraction of prospective patients: 70%; large-centre volume 200 transplants a year; 20-centre consortium 3,000 a year.',
-         '- Onset of grade II-IV aGvHD: log-normal, median day 28; pre-onset window 14 days; subgroup shares as listed in section 5.',
-         '- Retained-signal fraction of an adapter embedding kappa = 0.9 (to be measured by tasks F2 and G4); nuisance-structure multiplier on the effective dimension of a raw-gene head measured by the stress test of section 9.4.']
+    L = ['# Data requirements for ALLO-FM and GvHD-Bench v1.0 — one institution', '',
+         f'Generated by `ALLO_FM_GvHD_foundation_model.ipynb` on {time.strftime("%Y-%m-%d", time.gmtime())}. Every number is computed in the notebook (section 9). '
+         f'The plan assumes **one large transplant centre**: about {TRANSPLANTS_PER_YEAR} transplants a year, **at most {N_CAP:,} patients** with an EHR timeline and {N_SPEC} with banked specimens. '
+         'Items marked † are planning assumptions. No costs are estimated.', '',
+         '## 1 Headline numbers', '',
+         f'- **Show a gain**: +0.03 AUROC over a correlated baseline needs about {n80(.03, .85):,} patients (score correlation 0.85); +0.05 needs {n80(.05, .85):,}; +0.02 needs {n80(.02, .85):,}, beyond one centre.',
+         f'- **Head size**: {N_CAP:,} patients support a head of about {max_params(N_CAP, .72, .35)} parameters (AUROC 0.72, prevalence 0.35); the {N_DEV} patients of a 60/40 temporal development set about {max_params(N_DEV, .72, .35)}; the {N_SPEC} with specimens about {max_params(N_SPEC, .72, .35)}.',
+         f'- **Model**: a tiny timeline model from scratch is about {fmt_n(N_tiny)} parameters ({fmt_t(H_tiny)} on one A100); the preferred route is a released pretrained model kept frozen with a head of 5–25 parameters (embeddings for the cohort in {fmt_t(H_emb)}).',
+         f'- **Tasks runnable at one institution**: {len(vs_ids["RUNNABLE"])} of {int((cards_df.one_inst_verdict != "-").sum())} numeric-target tasks ({", ".join(vs_ids["RUNNABLE"])}); {len(vs_ids["ESTIMABLE"])} estimable only ({", ".join(vs_ids["ESTIMABLE"])}); {len(vs_ids["OUT OF REACH"])} out of reach ({", ".join(vs_ids["OUT OF REACH"])}).',
+         f'- **Transcriptomes at diagnosis**: a pre-specified tissue score is validated on {n_for_ci(.85, .5, .10)}–{n_for_ci(.85, .5, .07)} biopsies ({N_BIOPSY} are collected in three years); a 10-parameter adapter head *learns* tissue differential diagnosis from {TC_NUM[0][0]:,.0f} profiles but showing +0.05 over the clinical baseline takes {TC_NUM[0][1]:,.0f} ({ONE("C1")} eligible, marginal); steroid refractoriness, the day-7 blood transcriptome and any whole-transcriptome head are not feasible at one centre.',
+         f'- **Longitudinal**: {k_needed(.80, .5, .02)} draws per window at single-draw reliability 0.5; draws 2–3.5 days apart for a 10-day prodrome; about {WEEKLY_N} patients with weekly draws for 100 evaluable cases.',
+         f'- **Level-1C gate**: passed with probability {level1c_power(N_TEST, .05):.0%} for a true gain of +0.05 on {N_TEST} temporal-test patients; about {level1c_power(N_TEST, .01):.0%} for +0.01.', '',
+         '## 2 Capacity of the cohort sizes one centre has', '', T(cap_si), '',
+         '## 3 Task feasibility at one institution', '', T(feas), '',
+         '## 4 Transcriptome claims', '', T(plan), '', T(tc), '',
+         '## 5 Longitudinal design', '', T(kn), '', T(prod), '', T(disp_sched), '', T(lg), '', T(icc_tab), '',
+         '## 6 Validation, subgroups, label noise', '', T(v_show[['AUROC', 'prevalence', 'patients', 'events', 'binding criterion', 'years of silent-mode at one centre']]), '', T(sg), '', T(ltab), '',
+         '## 7 The data plan', '', T(disp_si), '',
+         '## 8 Assumptions (†)', '',
+         f'- {TRANSPLANTS_PER_YEAR} transplants a year; {EHR_YEARS:g} years of EHR timelines; {SPECIMEN_YEARS} years of banked specimens at {USABLE_FRACTION:.0%} usable; about 20 % of transplants biopsied for suspected GvHD.',
+         '- Eligible fraction of transplants per task (§8.4); onset of grade II–IV aGvHD log-normal with median day 28; pre-onset window 14 days; subgroup shares as listed in section 6.',
+         '- Retained-signal fraction κ of a frozen adapter = 0.9 (to be measured by tasks F2 and G4); the effective dimension of a raw-gene head is inflated by the nuisance multiplier measured in §9.4.']
     return '\n'.join(L)
 bench_req_path = os.path.join(SPEC_DIR, 'DATA_REQUIREMENTS_v1.0.md')
 open(bench_req_path, 'w').write(_req_md())
-bom.to_csv(os.path.join(SPEC_DIR, 'data_requirements.csv'), index=False)
-cost.to_csv(os.path.join(SPEC_DIR, 'programme_cost.csv'))
-print(f'wrote {bench_req_path} ({os.path.getsize(bench_req_path) / 1024:.0f} kB) and data_requirements.csv, programme_cost.csv')
+plan_si.to_csv(os.path.join(SPEC_DIR, 'data_requirements.csv'), index=False)
+print(f'wrote {bench_req_path} ({os.path.getsize(bench_req_path) / 1024:.0f} kB) and data_requirements.csv')
 ''')
 
 code(r'''
@@ -337,8 +338,7 @@ for f, desc in [('data_dictionary.csv', f'{len(dd)} data elements in {dd.domain.
                 ('GVHD_BENCH_v1.0.md', 'standalone benchmark specification'),
                 ('gate.json', 'pre-stated gate for the ALLO-FM v1 attempt'),
                 ('DATA_REQUIREMENTS_v1.0.md', 'standalone data-requirement specification: what to collect, how much, how often'),
-                ('data_requirements.csv', f'{len(bom)} rows: layer x package, patients, centres, specimens, cost'),
-                ('programme_cost.csv', 'programme cost by package')]:
+                ('data_requirements.csv', f'{len(plan_si)} rows: the S0/S1/S2 data plan, patients, specimens, storage, time')]:
     p = os.path.join(SPEC_DIR, f); manifest[f] = dict(description=desc, bytes=os.path.getsize(p),
         sha256=hashlib.sha256(open(p, 'rb').read()).hexdigest()[:16])
 json.dump(manifest, open(os.path.join(SPEC_DIR, 'MANIFEST.json'), 'w'), indent=2)
@@ -350,30 +350,43 @@ checks = [
  ('domains in the dictionary', dd.domain.nunique(), 25, 0),
  ('elements required for ALLO-FM v1', int((dd.priority == 'R').sum()), 74, 0),
  ('benchmark tasks', len(reg_full), 40, 0),
- ('figures written (PDF + PNG each)', len(FIGS), 17, 0),
+ ('figures written (PDF + PNG each)', len(FIGS), 18, 0),
  ('tokens per patient, Tier A+B', tok_by_tier['B'], 7580, 100),
  ('task families', reg.family.nunique(), 7, 0),
- ('Riley n, P=768, AUROC .72, prev .35', riley_n(768, .72, .35)['n'], 47662, 2000),
- ('tasks: powered', int((cards_df.verdict == 'POWERED').sum()), 15, 0), ('tasks: under-powered', int((cards_df.verdict == 'UNDER-POWERED').sum()), 11, 0),
- ('tasks: not a single-AUROC task', int((cards_df.verdict == '-').sum()), 14, 0),
- ('compute-optimal parameters, 100k patients Tier A+B (M)', N_opt / 1e6, 38, 2),
- ('one pretraining run (A100-hours)', gpu_opt, 3.2, .8), ('whole programme (A100-hours)', PROG_H, 95, 20),
- ('orders of magnitude below a 7B language model', OOM_VS_LLM, 3.4, .4),
- ('patients to show +0.03, score correlation 0.85', n80(.03, .85), 840, 80), ('patients to show +0.03, score correlation 0.60', n80(.03, .6), 2100, 250),
- ('whole-transcriptome head, ceiling 0.88 (thousands of profiles)', n_whole / 1e3, 390, 60), ('whole-transcriptome head, ceiling 0.75 (millions)', n_whole75 / 1e6, 1.0, .15),
- ('64-d adapter head, ceiling 0.88 (profiles)', n_adapt, 680, 60), ('64-d adapter head, ceiling 0.75 (profiles)', n_adapt75, 1700, 150),
- ('day-7 blood transcriptome +0.02, 8 centres (profiles)', b1['n for +0.02 (ρ = 0.8, K = 8)'], 3450, 400), ('... realisable gain at rho 0.8', b1['realisable gain (ρ = 0.8, K = 8)'], .029, .005),
- ('draws per window to come within 0.02 (reliability 0.5)', k_needed(.80, .5, .02), 6, 0), ('nested weekly cohort for 300 evaluable cases (patients)', DENSE_N, 1271, 150),
- ('centres for 80 % power, tau 0.02 (closed form)', K_required(.03, .02, 300), 17, 2), ('centres for 80 % power, tau 0.04 (closed form)', K_required(.03, .04, 300), 40, 6),
- ('adopted gate: power at +0.03, K = 20', g20(.03, 'pass_adopted'), .85, .08), ('adopted gate: false pass at +0.01, K = 20', g20(.01, 'pass_adopted'), .02, .04),
- ('obvious gate: pass probability at its own threshold', g20(.03, 'pass_obvious'), .5, .1),
- ('percentile-bootstrap coverage at K = 20', cb(20, 'cov_boot'), .926, .03), ('t-interval coverage, worst over K', oc.cov_t.min(), .945, .03),
- ('static-model observed/expected in the last drift year', drift_df.OE_static.iloc[-1], .69, .12),
- ('Level-3 validation patients, AUROC 0.75, prevalence 0.15', vtab[(vtab.AUROC == .75) & (vtab.prevalence == .15)].patients.iloc[0], 1117, 120),
- ('patients per subgroup for a 0.10 sensitivity gap', n_gap_pat[.10], 1012, 100), ('label noise (kappa 0.78): n inflation', ltab[ltab['kappa vs truth'] == .78]['n to show it vs noise-free n'].iloc[0], 1.87, .25),
- ('data bill, minimum viable (USD millions)', cost.loc['minimum viable', 'total'] / 1e6, 18, 5), ('data bill, credible (USD millions)', cost.loc['credible', 'total'] / 1e6, 51, 12),
- ('data bill, definitive (USD millions)', cost.loc['definitive', 'total'] / 1e6, 92, 20),
+ ('Riley n, P=10, AUROC .72, prev .35', riley_n(10, .72, .35)['n'], 621, 30),
+ ('tasks: runnable at one centre', int((cards_df.one_inst_verdict == 'RUNNABLE').sum()), 12, 0), ('tasks: estimable only', int((cards_df.one_inst_verdict == 'ESTIMABLE').sum()), 9, 0),
+ ('tasks: out of reach', int((cards_df.one_inst_verdict == 'OUT OF REACH').sum()), 4, 0),
+ ('tasks: no single-AUROC verdict', int((cards_df.one_inst_verdict == '-').sum()), 15, 0),
+ # ---- the one-institution plan: every number the abstract and section 9 quote
+ ('ceiling cohort: patients with an EHR timeline', N_CAP, 1500, 0),
+ ('patients with banked specimens', N_SPEC, 420, 0),
+ ('biopsies in three years', N_BIOPSY, 120, 0),
+ ('largest package in the data plan (patients; must not exceed the ceiling)', int(plan_si.patients.max()), 1500, 0),
+ ('largest head, 1,500 patients (AUROC .72, prevalence .35)', max_params(N_CAP, .72, .35), 24, 0),
+ ('largest head, 900-patient development set', max_params(N_DEV, .72, .35), 14, 0),
+ ('largest head, 420 patients with specimens', max_params(N_SPEC, .72, .35), 6, 0),
+ ('patients to show +0.03 over a correlated baseline (r = .85)', n80(.03, .85), 836, 15),
+ ('patients to show +0.05', n80(.05, .85), 299, 10),
+ ('patients to show +0.02 (beyond one centre)', n80(.02, .85), 1893, 40),
+ ('tiny timeline model from scratch, thousand parameters', N_tiny / 1e3, 568, 6),
+ ('whole one-institution programme, A100 minutes', PROG_H * 60, 19, 2),
+ ('Level-1C pass probability, true gain +0.05, 600 test patients', level1c_power(N_TEST, .05), .89, .02),
+ ('Level-1C pass probability, true gain +0.03', level1c_power(N_TEST, .03), .35, .03),
+ ('Level-1C pass probability, true gain +0.01', level1c_power(N_TEST, .01), .02, .02),
+ ('few-shot: patients per class, 5-parameter head within 0.02 of 0.75', kw(5), 52, 3),
+ ('few-shot: 10-parameter head', kw(10), 104, 5),
+ ('few-shot: 25-parameter head', kw(25), 260, 10),
+ ('biopsies to validate a pre-specified tissue score to +-0.07', n_for_ci(.85, .5, .07), 120, 0),
+ ('tissue differential diagnosis: patients to show +0.05 with a 10-parameter head', TC_NUM[0][1], 241, 6),
+ ('eligible patients for C1/C2 at one centre', ONE('C1'), 210, 0),
+ ('weekly cohort of 420: cases with two or more pre-onset draws', int(lg['cases with ≥ 2 pre-onset draws'].iloc[-1]), 141, 4),
+ ('draws per window to come within 0.02 of the oracle (reliability .5)', k_needed(.80, .5, .02), 6, 0),
 ]
+if not QUICK:                                          # the benchmark's own operating characteristics are simulated: compare them to the abstract only at full replicate counts
+    checks += [
+     ('percentile bootstrap coverage, 8 centres', cb(8, 'cov_boot'), .88, .03), ('percentile bootstrap coverage, 20 centres', cb(20, 'cov_boot'), .93, .03),
+     ('obvious gate: pass probability at a true gain of exactly +0.03 (20 centres)', g20(.03, 'pass_obvious'), .51, .06),
+     ('adopted gate: pass probability at +0.03 (20 centres)', pw_(20, .03), .85, .05), ('adopted gate: pass probability at +0.01', pw_(20, .01), .02, .03)]
 directional = [
  ('[SIM] S1: pretraining does NOT help when nothing is shared (rho=0, k=25)',
   s1.loc[(0.0, 'pretrained'), 25] - s1.loc[(0.0, 'raw'), 25], 'gain <= +0.02',
@@ -409,7 +422,7 @@ md(r'''
 **Clinical foundation models and sequence models over health records**
 1. Steinberg E, Fries J, Wornow M, Shah N, et al. **MOTOR: a time-to-event foundation model for structured medical records.** ICLR 2024; arXiv:2301.03150. Pretrained on up to 55 M patient records / 9 B events; 19 tasks across 3 databases; reported +4.6 % time-dependent C and up to 95 % better label efficiency; 143 M-parameter model released. ✓
 2. Steinberg E, et al. **Language models are an effective representation learning technique for electronic health record data** (CLMBR). *J Biomed Inform* 2021. †
-3. Wornow M, et al. **EHRSHOT: an EHR benchmark for few-shot evaluation of foundation models.** NeurIPS Datasets & Benchmarks 2023; arXiv:2307.02028. ✓
+3. Wornow M, Thapa R, Steinberg E, Fries JA, Shah NH. **EHRSHOT: an EHR benchmark for few-shot evaluation of foundation models.** NeurIPS Datasets & Benchmarks 2023; arXiv:2307.02028. One institution (Stanford); de-identified structured records of 6,739 patients; 15 few-shot tasks; the released CLMBR-T-base (141 M parameters, pretrained on 2.57 M patients' records) used frozen with a logistic-regression head; access by data-use agreement. ✓ (the template of this paper, §1.1)
 4. Shmatko A, et al. **Delphi-2M: generative modelling of disease trajectories.** *Nature* 2025. †
 5. Kraljevic Z, et al. **Foresight — generative pretrained transformer for modelling of patient timelines.** *Lancet Digit Health* 2024. †
 6. Harutyunyan H, et al. **Multitask learning and benchmarking with clinical time series data.** *Sci Data* 6:96 (2019). ✓
@@ -456,12 +469,20 @@ md(r'''
 41. Hernán MA, Robins JM. **Using big data to emulate a target trial when a randomized trial is not available.** *Am J Epidemiol* 183:758–764 (2016). † (task G6)
 42. Agniel D, Kohane IS, Weber GM. **Biases in electronic health record data due to processes within the healthcare system: retrospective observational study.** *BMJ* 361:k1479 (2018). † (when and whether a test is ordered carries information about the patient; the mechanism behind the presence-only comparator of §8.12)
 
+**Prior GvHD prediction work (§1.1)**
+43. Arai Y, et al. **Using a machine learning algorithm to predict acute graft-versus-host disease following allogeneic transplantation.** *Blood Adv* 3(22):3626–3634 (2019). 26,695 Japanese recipients; alternating decision tree; 15 of > 40 variables; validation incidence 29.0 % vs 58.7 %, HR 2.57. ✓
+44. Jo et al. **A convolutional neural network-based model that predicts acute graft-versus-host disease after allogeneic hematopoietic stem cell transplantation.** *Commun Med* 3:67 (2023); doi:10.1038/s43856-023-00299-5. 18,763 adults from the Japanese registry. ✓
+45. Chandra et al. Machine-learning models for acute GvHD after allogeneic transplantation for T-cell prolymphocytic leukaemia, CIBMTR data. *BMC Med Res Methodol* 24:112 (2024). Best test balanced accuracy 0.58. ✓ (article checked; exact title †)
+46. **MatchGraft.AI** — donor–recipient-pair aGvHD risk for donor selection. ASH 2023 abstract (not peer-reviewed): 1,035 donor–recipient sets; AUC 0.70; integrated calibration index 0.028. ✓
+47. **Early GVHD prediction in liver transplantation via multi-modal deep learning on imbalanced EHR data.** arXiv:2511.11623 (2025). ✓ (title as retrieved; methods not checked †)
+48. **Machine learning applications and challenges in graft-versus-host disease: a scoping review.** ✓ (title as retrieved; authors and venue †)
+
 ---
 ## Appendix A — Reproducibility
 
 * **Runtime.** CPU only. Dependencies: numpy, pandas, scipy, scikit-learn, matplotlib. End-to-end run ≈ 6–10 minutes on a laptop CPU; set the environment variable `ALLOFM_QUICK=1` to cut simulation replicates (numbers get noisier, the harness uses 8 held-out centres so the Level-2 gate reports *not evaluable*, and the consistency tolerances still apply).
 * **Seeds.** Global seed in the setup cell; every simulation takes an explicit seed. The [SIM] cohort generator is `simulate_cohort(...)` and is deterministic given its seed.
-* **Exported specification** (written to `spec/`, hashes in `spec/MANIFEST.json`): `data_dictionary.csv`, `sampling_schedule.csv`, `task_registry.csv`, `task_cards.csv`, `GVHD_BENCH_v1.0.md`, `gate.json`, and the data-requirement bundle `DATA_REQUIREMENTS_v1.0.md`, `data_requirements.csv`, `programme_cost.csv`.
+* **Exported specification** (written to `spec/`, hashes in `spec/MANIFEST.json`): `data_dictionary.csv`, `sampling_schedule.csv`, `task_registry.csv`, `task_cards.csv`, `GVHD_BENCH_v1.0.md`, `gate.json`, and the data-requirement bundle `DATA_REQUIREMENTS_v1.0.md`, `data_requirements.csv`.
 * **Figure layout gate.** Every figure is measured before it is saved: the build fails if any two pieces of rendered text overlap, if text sits on a data marker, line or bar, or if any font is below 6 pt (set `ALLOFM_STRICT_FIGS=1` to make a failure stop the run; otherwise it is printed as a warning). The whole suite passes under both Liberation Sans and the wider DejaVu Sans that Colab falls back to (`ALLOFM_FONT="DejaVu Sans"`).
 * **Tests executed in-notebook.** MAGIC grading vignettes; steroid-response and GRFS vignettes; fast-vs-textbook DeLong agreement; Hanley–McNeil versus simulated standard error; IPCW td-AUROC against the uncensored AUROC; IPCW recovery under censoring; Aalen–Johansen against empirical incidence; net-benefit bounds for perfect and random models; Riley criterion-1 arithmetic; the leakage audit on a cohort with a planted leak; closed-form paired power against a Monte-Carlo DeLong test; the transcriptome learning-curve formula against simulated heads, with a stress test; Spearman–Brown against simulation; closed-form gate power against the gate simulation; calibration-slope Fisher information against simulation; the label-noise attenuation formula against simulation; interval coverage and gate operating characteristics; planted-effect recovery, a permuted-outcome control and an informative-presence test through the real harness; and a final consistency check of every number quoted in the narrative.
 * **What is *not* in this notebook.** Any trained foundation model, any real patient data, and any claim about clinical performance. The pilot results in §10 come from the executed notebook `GvHD_FM_benchmark_blueprint.ipynb` in this repository.
@@ -470,5 +491,5 @@ md(r'''
 1. **To build a cohort:** take `spec/data_dictionary.csv` as the extraction checklist; implement `t_valid` / `t_known` for every element; implement the §4.6 label functions; run the §8.7 audit before any modelling.
 2. **To run the benchmark:** take `spec/task_registry.csv`; for each task fix the landmark (the *issue* day), horizon and competing events as given; use the §8.6 metrics; report every mandatory baseline from §8.5 in the same table, including the presence-only and permuted-outcome controls.
 3. **To make a claim:** check it against the ladder in §8.10 and against `spec/gate.json`, whose hash should be reported with the results.
-4. **To plan a data collection:** read `spec/DATA_REQUIREMENTS_v1.0.md` for the package that matches the claim (minimum viable, credible, definitive), replace the planning values (τ, ρ, κ, unit costs) with measured ones as stage 1 produces them, and re-run §9.
+4. **To plan a data collection:** read `spec/DATA_REQUIREMENTS_v1.0.md` for the package that matches the claim (S0, S1 or S2), replace the planning values (τ, ρ, κ, transplants per year, usable fraction) with measured ones as stage 1 produces them, and re-run §9.
 ''')

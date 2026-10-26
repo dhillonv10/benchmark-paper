@@ -99,6 +99,7 @@ code(r'''
 GENES = 15_000
 HEADS = [  # name, p_eff, kappa (fraction of the signal retained), note
  ('pre-specified pathway scores (≈10)',            10,              .70, 'head sees a handful of fixed scores; keeps part of the signal'),
+ ('frozen pretrained adapter, 10-parameter head',  10,              .90, 'a released encoder, frozen; only a 10-parameter head is fitted; kappa is an ASSUMPTION that task F2 / G4 measure'),
  ('foundation-model adapter embedding (64-d)',     64,              .90, 'head sees a learned 64-d embedding; kappa is an ASSUMPTION that task G4 / F2 measure'),
  ('selected gene panel (500 genes)',               500 * MULT,      .95, 'a ridge/logistic head on 500 genes; effective dimension inflated by nuisance structure'),
  ('whole transcriptome (15,000 genes)',            GENES * MULT,    1.0, 'a ridge/logistic head on every gene'),
@@ -110,12 +111,15 @@ plan = []
 for name, pe, kap, note in HEADS:
     row = dict(head=name, p_eff=f'{pe:,.0f}', kappa=kap)
     for A1 in (.75, .88):
-        pl, n_ = plan_row(name, pe, kap, A1); row[f'ceiling {A1:.2f}: plateau'] = f'{pl:.3f}'; row[f'ceiling {A1:.2f}: n within 0.02 of it'] = f'{n_:,.0f}'
+        pl, n_ = plan_row(name, pe, kap, A1); row[f'ceiling {A1:.2f}: plateau'] = f'{pl:.3f}'; row[f'ceiling {A1:.2f}: n within 0.02 of it'] = capn(int(round(n_)))
     plan.append(row)
 plan = pd.DataFrame(plan)
-print('LABELLED TRANSCRIPTOMES NEEDED to come within 0.02 AUROC of what each head can reach (prevalence 0.30, single-centre ρ = 1, K = 8):'); display(md_table(plan))
-n_whole = plan_row(*HEADS[3][:3], .88)[1]; n_adapt = plan_row(*HEADS[1][:3], .88)[1]; n_whole75 = plan_row(*HEADS[3][:3], .75)[1]; n_adapt75 = plan_row(*HEADS[1][:3], .75)[1]
-print(f'at ceiling 0.88 the adapter head needs {n_adapt:,.0f} labelled profiles versus {n_whole:,.0f} for the whole-transcriptome head ({n_whole / n_adapt:,.0f}x fewer)')
+print(f'LABELLED TRANSCRIPTOMES NEEDED to come within 0.02 AUROC of what each head can reach (prevalence 0.30, single centre; "> {N_CAP:,}" = more than the ceiling cohort):'); display(md_table(plan))
+HD = {h[0]: h[:3] for h in HEADS}
+n_whole = plan_row(*HD['whole transcriptome (15,000 genes)'], .88)[1]; n_whole75 = plan_row(*HD['whole transcriptome (15,000 genes)'], .75)[1]
+n_adapt = plan_row(*HD['foundation-model adapter embedding (64-d)'], .88)[1]; n_adapt75 = plan_row(*HD['foundation-model adapter embedding (64-d)'], .75)[1]
+n_frozen = plan_row(*HD['frozen pretrained adapter, 10-parameter head'], .88)[1]; n_frozen75 = plan_row(*HD['frozen pretrained adapter, 10-parameter head'], .75)[1]
+print(f'at ceiling 0.88 a 10-parameter head on a frozen adapter needs {n_frozen:,.0f} labelled profiles and a 64-d adapter head {n_adapt:,.0f}; a whole-transcriptome head needs more than {N_CAP:,} by orders of magnitude')
 
 # the incremental question: labelled profiles for a transcriptome adapter to ADD to a strong clinical baseline (ρ = 0.8 across K = 8 centres)
 TXT = [  # task, what is added, baseline AUROC, ceiling AUROC with the transcriptome, prevalence
@@ -131,11 +135,12 @@ for name, A0, A1, pv in TXT:
         r_[f'realisable gain ({lab})'] = plat - A0
         r_[f'n for 80% of it ({lab})'] = n_for_target(A0 + .80 * (plat - A0), A0, A1, 64, pv, rho_, K_, .9)
         r_[f'n for 95% of it ({lab})'] = n_for_target(A0 + .95 * (plat - A0), A0, A1, 64, pv, rho_, K_, .9)
+    r_['10-parameter head, n for +0.02 (ρ = 1)'] = n_for_target(A0 + .02, A0, A1, 10, pv, 1.0, 8, .9)
     trows.append(r_)
 txt_tab = pd.DataFrame(trows)
 txt_disp = txt_tab.copy()
-for c in txt_disp.columns[4:]: txt_disp[c] = txt_disp[c].map(lambda v: ('+' + f'{v:.3f}') if 'gain' in c else ('not reachable' if not np.isfinite(v) else f'{v:,.0f}'))
-print('LABELLED PROFILES FOR AN ADAPTER (64-d, κ = 0.9) TO ADD TO A BASELINE ("realisable gain" = the plateau of the added AUROC at that ρ):'); display(md_table(txt_disp))
+for c in txt_disp.columns[4:]: txt_disp[c] = txt_disp[c].map(lambda v: ('+' + f'{v:.3f}') if 'gain' in c else ('not reachable' if not np.isfinite(v) else capn(int(round(v)))))
+print(f'LABELLED PROFILES FOR AN ADAPTER (64-d, κ = 0.9) TO ADD TO A BASELINE, and for a 10-parameter head ("realisable gain" = the plateau of the added AUROC at that ρ; "> {N_CAP:,}" = more than the ceiling cohort):'); display(md_table(txt_disp))
 def min_ceiling_gain(A0, want=.03, rho=.8, K=8, kappa=.9, pv=.30):
     for g in np.arange(.02, .30, .0025):
         if np.isfinite(n_for_target(A0 + want, A0, A0 + g, 64, pv, rho, K, kappa)): return float(g)
@@ -143,14 +148,7 @@ G_STAR = min_ceiling_gain(.72)
 ''')
 
 code(r'''
-# ----------------------------------------------------------------------------- 9.4: unlabelled pretraining corpora and the assay specification
-CORP = [('public bulk RNA-seq, all tissues (ARCHS4 / recount3 scale) †', 1_000_000), ('public blood and immune-cell bulk RNA-seq †', 200_000), ('GvHD-specific public series (the pilot of §10)', 838)]
-TOK_PER_SAMPLE = 2000                                  # one token per expressed gene, rank-encoded, top 2,000 per sample
-crow = []
-for name, ns_ in CORP:
-    Dc = ns_ * TOK_PER_SAMPLE; Nc = Dc / 20; hrs = a100_hours(train_flops(Nc, Dc))
-    crow.append({'unlabelled corpus': name, 'samples': f'{ns_:,}', 'tokens': fmt_n(Dc), 'compute-optimal adapter size': fmt_n(Nc), 'A100-hours': fmt_h(hrs)})
-print('UNLABELLED PRETRAINING CORPUS FOR A TRANSCRIPTOME ADAPTER:'); display(md_table(pd.DataFrame(crow)))
+# ----------------------------------------------------------------------------- 9.4: the assay specification (depth and detection)
 # depth and detection: lognormal gene abundance, negative-binomial counts; reliability of a 50-gene score between technical replicates
 rg = np.random.default_rng(3); frac_g = np.exp(rg.normal(math.log(1e-5), 1.8, 20000)); frac_g /= frac_g.sum() / 1.0
 sig = rg.choice(np.where(5e6 * frac_g >= 1)[0], 50, replace=False)             # one fixed 50-gene signature, scored at every depth
@@ -164,51 +162,52 @@ print('DEPTH (assumed gene-abundance model †):'); display(md_table(pd.DataFram
 ''')
 
 code(r'''
-# ----------------------------------------------------------------------------- Figure 13: how many labelled transcriptomes?
+# ----------------------------------------------------------------------------- Figure 13: how many labelled transcriptomes at one institution?
 fig = plt.figure(figsize=(FULL, 3.2))
 gs = fig.add_gridspec(1, 3, width_ratios=[1.1, 1.1, 1.0], left=.075, right=.985, bottom=.265, top=.875, wspace=.40)
-ax = fig.add_subplot(gs[0, 0]); ygrid(ax)                                       # (a) learning curves: raw genes vs adapter embeddings
-nn = np.geomspace(60, 3e5, 80); A1_ = .80
-raw_p = GENES * MULT; I_ = sep2(A1_)
-ax.plot(nn, [auc_lc(n, 0, I_, raw_p) for n in nn], color=PAL['grey'], lw=1.6, label='whole transcriptome')
-for kap, c, ls_ in ((1.0, PAL['seq'][3], '-'), (.85, PAL['seq'][2], '--'), (.7, PAL['seq'][1], ':')):
-    ax.plot(nn, [auc_lc(n, 0, kap * I_, 64) for n in nn], color=c, lw=1.5, ls=ls_, label=f'64-d adapter, $\\kappa$ = {kap:g}')
-ax.axhline(A1_, color=PAL['ink2'], lw=.6, ls='--'); ax.set_xscale('log'); ax.set_xlim(60, 3e5); ax.set_ylim(.5, .84)
-ax.set_xlabel('labelled transcriptomes $n$'); ax.set_ylabel('AUROC at a new centre'); panel(ax, 'a')
-ax.legend(loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2, columnspacing=1.0, handlelength=1.4, handletextpad=.4, labelspacing=.3)
+ax = fig.add_subplot(gs[0, 0]); ygrid(ax)                                       # (a) learning curves inside the ceiling cohort
+nn = np.geomspace(20, N_CAP, 80); A1_ = .80; I_ = sep2(A1_)
+ax.plot(nn, [auc_lc(n, 0, I_, GENES * MULT) for n in nn], color=PAL['grey'], lw=1.6, label='whole transcriptome')
+ax.plot(nn, [auc_lc(n, 0, .9 * I_, 64) for n in nn], color=PAL['seq'][1], lw=1.5, ls='--', label='64-d adapter head ($\\kappa$ = 0.9)')
+ax.plot(nn, [auc_lc(n, 0, .9 * I_, 10) for n in nn], color=PAL['seq'][3], lw=1.6, label='10-parameter head, frozen adapter ($\\kappa$ = 0.9)')
+ax.plot(nn, [auc_lc(n, 0, .7 * I_, 10) for n in nn], color=PAL['seq'][2], lw=1.5, ls=':', label='10-parameter head ($\\kappa$ = 0.7)')
+ax.axhline(A1_, color=PAL['ink2'], lw=.6, ls='--'); ax.axvline(N_SPEC, color=PAL['ink2'], lw=.6, ls=':')
+ax.set_xscale('log'); ax.set_xlim(20, N_CAP); ax.set_ylim(.5, .83); ax.set_xticks([20, 50, 100, 300, 1000]); ax.set_xticklabels(['20', '50', '100', '300', '1,000']); ax.minorticks_off()
+ax.set_xlabel('labelled transcriptomes $n$'); ax.set_ylabel('AUROC at a new patient set'); panel(ax, 'a')
+ax.legend(loc='upper center', bbox_to_anchor=(.5, -.25), ncol=1, handlelength=1.4, handletextpad=.4, labelspacing=.3)
 ax = fig.add_subplot(gs[0, 1]); ygrid(ax)                                       # (b) labelled profiles needed to add a gain to a baseline
 gains = np.linspace(.035, .14, 40)
 for A0, c in ((.65, PAL['seq'][0]), (.72, PAL['seq'][2]), (.80, PAL['seq'][3])):
-    ys = [n_for_target(A0 + .03, A0, A0 + g, 64, .30, .8, 8, .9) for g in gains]; ys = [y if np.isfinite(y) else np.nan for y in ys]
+    ys = [n_for_target(A0 + .03, A0, A0 + g, 10, .30, 1.0, 8, .9) for g in gains]; ys = [y if np.isfinite(y) and y <= 4000 else np.nan for y in ys]
     ax.plot(gains, ys, color=c, lw=1.5, label=f'baseline AUROC {A0:.2f}')
-ax.axhline(1287, color=PAL['ink2'], lw=.6, ls=':'); ax.set_yscale('log'); ax.set_ylim(80, 3e5)
-ax.set_xlabel('gain the transcriptome could add at its ceiling'); ax.set_ylabel('labelled profiles to realise +0.03'); panel(ax, 'b')
-ax.annotate('MAGIC-scale cohort', (.14, 1287), xytext=(0, 3), textcoords='offset points', fontsize=6.3, color=PAL['ink2'], ha='right', va='bottom')
-ax.legend(loc='upper center', bbox_to_anchor=(.5, -.25), ncol=1, handlelength=1.4, labelspacing=.3)
-ax = fig.add_subplot(gs[0, 2]); ygrid(ax)                                       # (c) the plateau set by cross-centre sharing
+ax.axhline(N_CAP, color=PAL['bad'], lw=.8, ls=':', label=f'ceiling cohort ({N_CAP:,})'); ax.axhline(N_SPEC, color=PAL['ink2'], lw=.8, ls='--', label=f'with specimens ({N_SPEC})')
+ax.set_yscale('log'); ax.set_ylim(40, 4000); ax.set_yticks([50, 100, 420, 1500, 4000]); ax.set_yticklabels(['50', '100', '420', '1,500', '4,000']); ax.minorticks_off()
+ax.set_xlabel('gain the transcriptome could add at its ceiling'); ax.set_ylabel('labelled profiles to realise +0.03\n(10-parameter head)'); panel(ax, 'b')
+ax.legend(loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2, columnspacing=1.0, handlelength=1.4, handletextpad=.4, labelspacing=.3)
+ax = fig.add_subplot(gs[0, 2]); ygrid(ax)                                       # (c) the plateau set by cross-centre sharing (what a second centre would see)
 rr_ = np.linspace(0, 1, 60); D_ = math.sqrt(sep2(.85))
 for K_, c in ((4, PAL['seq'][0]), (8, PAL['seq'][2]), (20, PAL['seq'][3])):
     ax.plot(rr_, [norm.cdf((D_ / math.sqrt(2)) * r / math.sqrt(r + (1 - r) / K_)) if r > 0 else .5 for r in rr_], color=c, lw=1.5)
-    ax.annotate(f'K = {K_}', (1.0, norm.cdf((D_ / math.sqrt(2)) * (.30) / math.sqrt(.30 + .70 / K_))), xytext=(0, 0), textcoords='offset points', fontsize=6.3, color=c, ha='left', va='center', annotation_clip=False) if False else None
 ax.axhline(.85, color=PAL['ink2'], lw=.6, ls='--'); ax.set_xlabel('shared fraction of the signal across centres $\\rho$'); ax.set_ylabel('AUROC plateau at a new centre'); ax.set_ylim(.5, .88); ax.set_xlim(0, 1)
 ax.legend([plt.Line2D([], [], color=c, lw=1.5) for c in (PAL['seq'][0], PAL['seq'][2], PAL['seq'][3])], ['4 training centres', '8 training centres', '20 training centres'],
           loc='upper center', bbox_to_anchor=(.5, -.25), ncol=1, handlelength=1.4, labelspacing=.3); panel(ax, 'c')
 finish(fig, 13, 'transcriptome_requirements',
-       "Labelled transcriptomes needed at diagnosis (closed form, validated against simulation in §9.4). (a) Learning curve of a head on the whole transcriptome "
-       "against heads on a 64-dimensional adapter embedding that retains a fraction kappa of the signal: the embedding wins at the label counts a consortium can "
-       "reach, and the whole-transcriptome head approaches its ceiling only at several hundred thousand profiles. Dashed: the within-centre ceiling. (b) Labelled "
-       "profiles an adapter needs to add +0.03 AUROC to a baseline, against the gain the transcriptome could add at its ceiling; a weak ceiling gain cannot be "
-       "realised at any n once centres only partly share the signal. (c) The plateau at a new centre falls as the shared fraction rho falls, and more training "
-       "centres push it toward its limit.")
+       "Labelled transcriptomes at diagnosis, inside the ceiling cohort (closed form, validated against simulation in §9.4). (a) Learning curves at a ceiling AUROC of 0.80: a head on the whole "
+       "transcriptome is still at chance over the whole range a centre can reach, a 64-dimensional adapter head is slow, and a head of 10 parameters on a frozen adapter is close to its "
+       "plateau within a few hundred profiles; the dotted line marks the 420 patients with banked specimens. (b) Labelled profiles a 10-parameter head needs to add +0.03 AUROC to a baseline, against "
+       "the gain the transcriptome could add at its ceiling, with the 1,500-patient ceiling and the 420 specimen patients marked: small ceiling gains cannot be realised at one centre. "
+       "(c) What a second centre would see: the plateau falls as the shared fraction rho falls, and more training centres push it toward its limit; this is the reason a single-centre result is "
+       "a claim about that centre.")
 ''')
 
 code(r'''
-b1 = txt_tab[txt_tab.task.str.startswith('B1')].iloc[0]; c4_ = txt_tab[txt_tab.task.str.startswith('C4')].iloc[0]
-display(Markdown(f"""**Reading §9.4.** Three results, each computed above.
+b1 = txt_tab[txt_tab.task.str.startswith('B1')].iloc[0]; c4_ = txt_tab[txt_tab.task.str.startswith('C4')].iloc[0]; c12 = txt_tab.iloc[0]
+min_n_b1 = int(round(b1['10-parameter head, n for +0.02 (ρ = 1)'])) if np.isfinite(b1['10-parameter head, n for +0.02 (ρ = 1)']) else None
+display(Markdown(f"""**Reading §9.4.** Three results, each computed above, and each restated for what one centre can reach (≤ {N_CAP:,} patients, ≤ {N_SPEC} with specimens).
 
-1. **The transcriptome is label-hungry unless something shrinks the dimension.** A head on the whole transcriptome needs **{min(n_whole, n_whole75):,.0f}–{max(n_whole, n_whole75):,.0f}** labelled profiles (ceiling 0.88 and 0.75) to come within 0.02 AUROC of its ceiling, and the stress test shows the real requirement exceeds the isotropic formula because cell composition and batch inflate the effective dimension by a factor of **{stress.p_eff_over_p.min():.1f}–{stress.p_eff_over_p.max():.1f}**. No public GvHD resource and no single consortium can supply that. This is the quantitative reason for the pilot's negative result on blood (§10), and it is independent of the architecture.
-2. **A good adapter changes the arithmetic.** If a pretrained 64-dimensional embedding retains 90 % of the signal, the same target needs **{min(n_adapt, n_adapt75):,.0f}–{max(n_adapt, n_adapt75):,.0f}** labelled profiles, **{n_whole / n_adapt:,.0f}×** fewer at ceiling 0.88. That *is* the label-efficiency claim of a foundation model, now with a number on it. Its price is the retained fraction κ: panel (a) shows an embedding that keeps only 70 % of the signal still wins at every label count a consortium can reach but plateaus lower, and tasks F2 and G4 measure κ directly.
-3. **A transcriptome adds a *small* increment to a *strong* baseline, and small increments are expensive.** For a day-7 blood transcriptome to add +0.02 to MAP plus clinical covariates (baseline 0.72, ceiling 0.76) an adapter needs **{b1['n for +0.02 (ρ = 1)']:,.0f}** labelled profiles from one centre and **{b1['n for +0.02 (ρ = 0.8, K = 8)']:,.0f}** across eight centres sharing 80 % of the signal, and the gain it can ever realise there is only **+{b1['realisable gain (ρ = 0.8, K = 8)']:.3f}**. To add +0.03 to a 0.72 baseline at all, the transcriptome must carry a ceiling gain of at least **+{G_STAR:.3f}**. By contrast, in tissue the same machinery needs only **{txt_tab.iloc[0]['n for +0.02 (ρ = 0.8, K = 8)']:,.0f}** profiles for +0.02 (C1/C2) and **{c4_['n for +0.02 (ρ = 0.8, K = 8)']:,.0f}** for steroid refractoriness (C4). This is why the paper claims the transcriptome adds value at diagnosis (tissue in hand, high ceiling) and does not claim it for pre-onset blood prognosis."""))
+1. **A head on the whole transcriptome is out of reach at any single-centre scale** — the planning table shows "> {N_CAP:,}" for it at both ceilings, because cell composition and batch inflate its effective dimension by a factor of {stress.p_eff_over_p.min():.1f}–{stress.p_eff_over_p.max():.1f}. This is the quantitative reason for the pilot's negative result on blood (§10), and it is independent of the architecture.
+2. **What a centre can do is shrink the head.** A **10-parameter head on a frozen pretrained adapter that keeps 90 % of the signal needs {n_frozen:,.0f}–{n_frozen75:,.0f} labelled profiles** (ceiling 0.88 and 0.75): inside the {N_SPEC} patients with specimens, and inside the biopsies a centre collects in three to four years. A pre-specified pathway score (no fitted parameters beyond a threshold) needs fewer still. A 64-dimensional adapter head needs {n_adapt:,.0f}–{n_adapt75:,.0f}, which is the edge of what one centre holds, and is the point at which pooling with other centres begins to matter.
+3. **A transcriptome adds a *small* increment to a *strong* baseline, and small increments are expensive twice over**: the head has to *learn* the increment, and the cohort has to *show* it against the baseline with a paired test, and the claim needs the larger of the two. §9.8 computes both for each claim. The most a day-7 blood transcriptome could ever add to MAP plus clinical covariates here is +{b1['realisable gain (ρ = 1)']:.3f}. In tissue the picture is different (a high ceiling, and the tissue is in hand), which is why the paper claims the transcriptome adds value at diagnosis and does not claim it for pre-onset blood prognosis."""))
 ''')
 
 # =====================================================================================================  9.5  LONGITUDINAL DESIGN
@@ -219,7 +218,7 @@ The sampling schedule of §4.4 is a minimum. This section asks what is needed fo
 
 1. **How many draws in a window?** If one draw measures a patient's state with single-draw reliability λ (the fraction of between-patient variance that is signal), the mean of *k* draws has reliability $\lambda_k=k\lambda/(1+(k-1)\lambda)$ (Spearman–Brown), and a predictor whose oracle AUROC is $A^*$ reaches $\Phi\!\big(\Phi^{-1}(A^*)\sqrt{\lambda_k}\big)$. We validate that against simulation.
 2. **How often?** Many biomarkers rise only in the days before clinical onset (a *prodrome* of length τ). If draws are Δ days apart, the number that land in the prodrome is $\lfloor\tau/\Delta\rfloor$ or one more, so the expected AUROC of a pre-onset alarm depends on Δ through the draws it gets.
-3. **How many specimens?** The protocol of §4.4 is evaluated against a realistic distribution of onset days: of the cases, what fraction have at least one, and at least two, specimens in the 14 days before onset? And how many patients must be enrolled to have 300 such cases?
+3. **How many specimens?** The protocol of §4.4 is evaluated against a realistic distribution of onset days: of the cases, what fraction have at least one, and at least two, specimens in the 14 days before onset? And how many patients must be enrolled to have **100** such cases (enough for an AUROC with a half-width of about ±0.09)?
 ''')
 
 code(r'''
@@ -275,11 +274,11 @@ for short, full in SPEC_TYPES:
         c_ = pre_counts(days); srow.append(dict(specimen=short, schedule=sch, draws_per_patient_to_d100=int(sum(d_ <= 100 for d_ in days)),
                                                  P_at_least_1=float((c_ >= 1).mean()), P_at_least_2=float((c_ >= 2).mean())))
 sdf = pd.DataFrame(srow)
-USABLE, PREV_AG, N_CASES_TARGET = .70, .35, 300
-sdf['patients to enrol for 300 cases with >= 2 pre-onset draws'] = [int(np.ceil(N_CASES_TARGET / (PREV_AG * USABLE * p))) if p > 0 else np.nan for p in sdf.P_at_least_2]
+USABLE, PREV_AG, N_CASES_TARGET = USABLE_FRACTION, .35, 100
+sdf['patients to enrol for 100 cases with >= 2 pre-onset draws'] = [int(np.ceil(N_CASES_TARGET / (PREV_AG * USABLE * p))) if p > 0 else np.nan for p in sdf.P_at_least_2]
 disp_sched = sdf.copy()
 for c in ('P_at_least_1', 'P_at_least_2'): disp_sched[c] = disp_sched[c].map(lambda v: f'{v:.0%}')
-disp_sched['patients to enrol for 300 cases with >= 2 pre-onset draws'] = disp_sched['patients to enrol for 300 cases with >= 2 pre-onset draws'].map(lambda v: 'not reachable' if pd.isna(v) else f'{v:,.0f}')
+disp_sched['patients to enrol for 100 cases with >= 2 pre-onset draws'] = disp_sched['patients to enrol for 100 cases with >= 2 pre-onset draws'].map(lambda v: 'not reachable' if pd.isna(v) else f'{v:,.0f}')
 print(f'PRE-ONSET SPECIMENS (onset = day {np.median(ONSET):.0f} median, window = the {WIN} days before onset, 70 % usable, grade II-IV prevalence {PREV_AG}):'); display(md_table(disp_sched))
 # B3 evaluation precision
 b3_events = int(np.ceil((1.96 / .07) ** 2 * .25)); b3_alerts = int(np.ceil((1.96 / .2) ** 2))
@@ -320,15 +319,16 @@ finish(fig, 14, 'longitudinal_design',
        "before onset under the minimum protocol of section 4.4 and under a weekly schedule to day +56, for each specimen type, against a realistic onset distribution.")
 ''')
 
-md(r'''
-**Reading §9.5.** (1) **Draws:** when a single draw is a noisy measurement (λ ≈ 0.3–0.5, typical of a dynamic blood signature), three to five draws in the window recover most of the oracle AUROC, and eight recover essentially all of it; when a draw is already reliable (λ ≥ 0.9), one suffices. Replicate draws are therefore worth buying exactly where the single-draw reliability is low — which is a *measurable* property of each assay (bridging and replicate samples, §4.4), not a guess. (2) **Interval:** the alarm degrades as the draw interval approaches the prodrome length; for a 10-day prodrome, draws every 7 or 14 days miss it in a large share of cases, while every 2–3.5 days keeps at least two draws inside it. (3) **Specimens:** the minimum protocol of §4.4 is designed for diagnosis and prognosis at fixed landmarks; it yields **few cases with two or more pre-onset specimens**, so it cannot by itself support trajectory tasks. A **nested trajectory cohort** (weekly to day +56 for blood RNA, plasma, stool and flow) is what makes B3 and the longitudinal objectives testable, and the table above gives the enrolment it needs for 300 evaluable cases. Its cost is in §9.8.
+code(r'''
+WEEKLY_ENROL = int(sdf[(sdf.specimen == 'Whole blood PAXgene RNA') & (sdf.schedule == 'weekly to day +56')]['patients to enrol for 100 cases with >= 2 pre-onset draws'].iloc[0]); WEEKLY_N = int(round(WEEKLY_ENROL * USABLE_FRACTION))
+display(Markdown(f"""**Reading §9.5.** (1) **Draws:** when a single draw is a noisy measurement (λ ≈ 0.3–0.5, typical of a dynamic blood signature), three to five draws in the window recover most of the oracle AUROC, and eight recover essentially all of it; when a draw is already reliable (λ ≥ 0.9), one suffices. Replicate draws are therefore worth buying exactly where the single-draw reliability is low — which is a *measurable* property of each assay (bridging and replicate samples, §4.4), not a guess. (2) **Interval:** the alarm degrades as the draw interval approaches the prodrome length; for a 10-day prodrome, draws every 7 or 14 days miss it in a large share of cases, while every 2–3.5 days keeps at least two draws inside it. (3) **Specimens:** the minimum protocol of §4.4 is designed for diagnosis and prognosis at fixed landmarks; it yields **few cases with two or more pre-onset specimens**, so it cannot by itself support trajectory tasks. A **nested trajectory cohort** (weekly to day +56 for blood RNA and plasma) is what makes B3 and the longitudinal objectives testable, and the table above gives the enrolment it needs for 100 evaluable cases: about **{WEEKLY_ENROL:,} patients enrolled** ({WEEKLY_N} usable) — inside the cohort of §9.9."""))
 ''')
 
 # =====================================================================================================  9.6  HOW MANY CENTRES
 md(r'''
-## 9.6 How many centres?
+## 9.6 How many centres, *if a network forms*? (context — not the ask)
 
-Patients are not the only unit. A benchmark that claims *out-of-centre* generalisation has an effective sample size that is partly a **number of centres**, because centres differ in case mix, prophylaxis practice, grading habits and assay handling in ways a model cannot see. The paired gain of a candidate over a baseline therefore varies from centre to centre with some **between-centre standard deviation τ**, on top of the sampling noise within each centre. The gate of §8.12 averages over *K* held-out centres with a *t*-interval, so its power is
+**This subsection is about the benchmark's Level 2, which any group may attempt with a network of centres; the plan of this paper is a single institution (§9.8–9.9) and makes no out-of-centre claim.** Patients are not the only unit. A benchmark that claims *out-of-centre* generalisation has an effective sample size that is partly a **number of centres**, because centres differ in case mix, prophylaxis practice, grading habits and assay handling in ways a model cannot see. The paired gain of a candidate over a baseline therefore varies from centre to centre with some **between-centre standard deviation τ**, on top of the sampling noise within each centre. The gate of §8.12 averages over *K* held-out centres with a *t*-interval, so its power is
 
 $$\Pr\big[\text{pass}\big]=\Pr\!\Big[t_{K-1}\!\big(\text{ncp}=\tfrac{\Delta-m}{\sqrt{(\tau^2+\mathrm{se}_c^2)/K}}\big)\ge t_{0.975,K-1}\Big],$$
 
@@ -364,7 +364,7 @@ print(f'[SIM] the 8.11 cohort: SD of the per-centre gain {dvec.std(ddof=1):.3f},
 # design effect for centre-level exposures (practice, policy): patients are clustered in centres
 dex = pd.DataFrame([{'intra-centre correlation': icc, **{f'{m} patients per centre': f'{1 + (m - 1) * icc:.1f}' for m in (100, 300, 1000)}} for icc in (.01, .03, .05)])
 print('DESIGN EFFECT 1 + (m - 1) × ICC for any effect that varies BETWEEN centres (prophylaxis policy, biopsy habit); effective n = n / DE:'); display(md_table(dex))
-print(f'with 6,000 patients in 20 centres of 300 and an ICC of 0.03 the effective sample for a centre-level effect is {6000 / (1 + 299 * .03):.0f} patients.')
+print(f'with 20 centres of 300 patients each (no centre holds more than the one-institution plan) and an ICC of 0.03, a centre-level effect has an effective sample of {20 * 300 / (1 + 299 * .03):.0f} patients; the pooled count is never needed in one place, because each centre can run the harness locally and share only summary statistics (§11).')
 ''')
 
 code(r'''
@@ -401,7 +401,6 @@ def validation_n(A, prev, se_slope=.10, se_oe=.10, hw_auc=.05):
     n_slope, n_citl, n_oe, n_auc = ib / se_slope ** 2, 1 / (ew * se_oe ** 2), (1 - prev) / (prev * se_oe ** 2), n_for_ci(A, prev, hw_auc)
     comp = dict(slope=n_slope, intercept=n_citl, oe=n_oe, auroc=n_auc); k = max(comp, key=comp.get)
     return dict(n=int(math.ceil(comp[k])), events=int(math.ceil(comp[k] * prev)), binding=k)
-# check the Fisher computation against a direct simulation of the calibration-slope SE
 def sim_slope_se(A, prev, n, reps=300, seed=2):
     r = np.random.default_rng(seed); D = math.sqrt(2) * norm.ppf(A); out = []
     for _ in range(reps):
@@ -411,32 +410,23 @@ def sim_slope_se(A, prev, n, reps=300, seed=2):
 fi_se = math.sqrt(_val_parts(.75, .15)[0] / 1500); sm_se = sim_slope_se(.75, .15, 1500, reps=150 if QUICK else 300)
 print(f'calibration-slope SE at n = 1500 (AUROC 0.75, prevalence 0.15): Fisher {fi_se:.3f} vs simulated {sm_se:.3f}')
 assert abs(fi_se - sm_se) / fi_se < (.25 if QUICK else .15)
-vtab = pd.DataFrame([dict(AUROC=A, prevalence=pv, **validation_n(A, pv)) for A in (.70, .75, .80) for pv in (.05, .15, .35)])
+vtab = pd.DataFrame([dict(AUROC=A, prevalence=pv, **validation_n(A, pv)) for A in (.70, .75, .80) for pv in (.10, .20, .35, .50)])
 vtab = vtab.rename(columns={'n': 'patients', 'binding': 'binding criterion'})
-print('PATIENTS (AND EVENTS) FOR A LEVEL-3 VALIDATION:'); display(md_table(vtab))
-rate1, rateC = 200 * USABLE, 3000 * USABLE
-vtab['months at one centre'] = (vtab.patients / rate1 * 12).round(0).astype(int); vtab['months, 20-centre consortium'] = (vtab.patients / rateC * 12).round(0).astype(int)
-print('TIME TO COLLECT A PROSPECTIVE VALIDATION COHORT (70 % usable; one centre 200 transplants a year, a 20-centre consortium 3,000):')
-display(md_table(vtab[['AUROC', 'prevalence', 'patients', 'months at one centre', 'months, 20-centre consortium']]))
+vtab['years of silent-mode at one centre'] = (vtab.patients / TRANSPLANTS_PER_YEAR).round(1)
+v_show = vtab.copy(); v_show['patients'] = v_show.patients.map(capn)
+print(f'PATIENTS (AND EVENTS) FOR A LEVEL-3 SILENT-MODE VALIDATION — all transplants of the centre count, so {TRANSPLANTS_PER_YEAR} a year ("> {N_CAP:,}" = more than the ceiling cohort):'); display(md_table(v_show))
 
-# ---------- subgroups (shares are planning assumptions †)
-SUBGROUPS = [('cord-blood graft', .05), ('Black / African ancestry (US registry)', .06), ('Asian / Pacific Islander (US registry)', .07), ('lowest-volume centre tertile', .08),
-             ('Hispanic / Latino (US registry)', .10), ('paediatric (< 18 y)', .15), ('haploidentical donor', .20)]
+# ---------- subgroups at one institution (shares are planning assumptions †)
+SUBGROUPS = [('cord-blood graft', .05), ('Black / African ancestry (US centre)', .06), ('Asian / Pacific Islander (US centre)', .07),
+             ('Hispanic / Latino (US centre)', .10), ('paediatric (< 18 y)', .15), ('haploidentical donor', .20)]
 A_sg, pv_sg = .72, .35
 n_gap_events = {g: int(np.ceil((norm.ppf(.975) + norm.ppf(.8)) ** 2 * (.70 * .30 + (.70 - g) * (.30 + g)) / g ** 2)) for g in (.10, .05)}
 n_gap_pat = {g: int(np.ceil(e / pv_sg)) for g, e in n_gap_events.items()}
-sgrow = []
-for name, s in SUBGROUPS:
-    n_auc_ = n_for_ci(A_sg, pv_sg, .07); n_slope_ = int(np.ceil(_val_parts(A_sg, pv_sg)[0] / .15 ** 2)); base_need = max(n_auc_, n_slope_)
-    row_ = {'subgroup': name, 'share †': f'{s:.0%}'}
-    for g in (.10, .05):
-        need_sub = max(base_need, n_gap_pat[g]); row_[f'patients in subgroup for a {g:.2f} gap'] = f'{need_sub:,}'; row_[f'total cohort for a {g:.2f} gap'] = int(np.ceil(need_sub / s))
-    row_['assessable at 25,000 (gap 0.10 / 0.05)'] = ' / '.join('yes' if 25000 * s >= max(base_need, n_gap_pat[g]) else 'NO' for g in (.10, .05))
-    row_['assessable at 100,000 (gap 0.10 / 0.05)'] = ' / '.join('yes' if 100000 * s >= max(base_need, n_gap_pat[g]) else 'NO' for g in (.10, .05))
-    sgrow.append(row_)
-sg = pd.DataFrame(sgrow); sg_disp = sg.copy()
-for c in ('total cohort for a 0.10 gap', 'total cohort for a 0.05 gap'): sg_disp[c] = sg_disp[c].map(lambda v: f'{v:,}')
-print(f'SUBGROUP AUDIT (AUROC {A_sg}, prevalence {pv_sg}; an equal-opportunity gap of 0.10 in sensitivity needs {n_gap_events[.10]} events per group = {n_gap_pat[.10]:,} patients, a gap of 0.05 needs {n_gap_events[.05]:,} = {n_gap_pat[.05]:,}):'); display(md_table(sg_disp))
+sg_base = max(n_for_ci(A_sg, pv_sg, .07), int(np.ceil(_val_parts(A_sg, pv_sg)[0] / .15 ** 2)))
+sg = pd.DataFrame([{'subgroup': name, 'share †': f'{s:.0%}', f'patients at {N_CAP:,}': int(s * N_CAP),
+                    'AUROC to ±0.07 and slope SE 0.15 need': f'{sg_base:,}', 'a 0.10 sensitivity gap needs': f'{max(sg_base, n_gap_pat[.10]):,}',
+                    'assessable at one centre?': 'no — descriptive only' if s * N_CAP < max(sg_base, n_gap_pat[.10]) else 'yes'} for name, s in SUBGROUPS])
+print(f'SUBGROUPS AT ONE INSTITUTION (AUROC {A_sg}, prevalence {pv_sg}; an equal-opportunity gap of 0.10 in sensitivity needs {n_gap_events[.10]} events per group = {n_gap_pat[.10]:,} patients in the subgroup, a gap of 0.05 needs {n_gap_pat[.05]:,}):'); display(md_table(sg))
 
 # ---------- label noise
 def auc_obs(A, prev, se, sp):
@@ -456,7 +446,7 @@ ltab = pd.DataFrame(lrow); print('LABEL NOISE (prevalence 0.35):'); display(md_t
 ''')
 
 code(r'''
-# ----------------------------------------------------------------------------- Figure 15: centres, validation size and subgroup precision
+# ----------------------------------------------------------------------------- Figure 15: centres (if a network forms), validation size and subgroup size
 fig = plt.figure(figsize=(FULL, 3.2))
 gs = fig.add_gridspec(1, 3, width_ratios=[1.0, 1.05, 1.0], left=.075, right=.985, bottom=.265, top=.875, wspace=.42)
 ax = fig.add_subplot(gs[0, 0]); ygrid(ax)                                       # (a) centres needed for the gate
@@ -467,171 +457,233 @@ ax.axhline(GATE['level2_gate']['min_centres'], color=PAL['bad'], lw=.8, ls=':', 
 ax.set_xlabel('between-centre SD of the gain, $\\tau$'); ax.set_ylabel('centres for 80% power (gain +0.03)'); ax.set_xlim(.005, .05)
 ax.legend(loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2, columnspacing=1.0, handlelength=1.4, handletextpad=.4, labelspacing=.3); panel(ax, 'a')
 ax = fig.add_subplot(gs[0, 1]); ygrid(ax)                                       # (b) Level-3 validation size
-prevs = np.geomspace(.05, .5, 24)
+prevs = np.geomspace(.10, .5, 24)
 for A, c in zip((.70, .75, .80), (PAL['seq'][0], PAL['seq'][2], PAL['seq'][3])):
     ax.plot(prevs, [validation_n(A, pv)['n'] for pv in prevs], color=c, lw=1.5, label=f'AUROC {A:.2f}')
-ax.axhline(200 * USABLE * 3, color=PAL['ink2'], lw=.8, ls=':', label='one centre, 3 years'); ax.axhline(3000 * USABLE, color=PAL['ink2'], lw=.8, ls='--', label='20 centres, 1 year')
-ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xticks([.05, .1, .2, .5]); ax.set_xticklabels(['0.05', '0.1', '0.2', '0.5']); ax.minorticks_off()
-ax.set_yticks([300, 1000, 3000]); ax.set_yticklabels(['300', '1,000', '3,000'])
+ax.axhline(N_CAP, color=PAL['bad'], lw=.8, ls=':', label=f'ceiling cohort ({N_CAP:,})'); ax.axhline(TRANSPLANTS_PER_YEAR * 3, color=PAL['ink2'], lw=.8, ls='--', label='3 years of silent mode (600)')
+ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xticks([.1, .2, .35, .5]); ax.set_xticklabels(['0.1', '0.2', '0.35', '0.5']); ax.minorticks_off()
+ax.set_yticks([300, 600, 1000, 1500, 2500]); ax.set_yticklabels(['300', '600', '1,000', '1,500', '2,500']); ax.set_ylim(300, 2800)
 ax.set_xlabel('outcome prevalence'); ax.set_ylabel('patients for a Level-3 validation')
 ax.legend(loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2, columnspacing=1.0, handlelength=1.4, handletextpad=.4, labelspacing=.3); panel(ax, 'b')
-ax = fig.add_subplot(gs[0, 2]); ygrid(ax)                                       # (c) subgroup assessability
-shares = np.geomspace(.02, .30, 30)
-for g, c in ((.10, PAL['seq'][2]), (.05, PAL['seq'][3])):
-    need_g = max(n_for_ci(A_sg, pv_sg, .07), int(np.ceil(_val_parts(A_sg, pv_sg)[0] / .15 ** 2)), n_gap_pat[g])
-    ax.plot(shares, need_g / shares, color=c, lw=1.5, label=f'sensitivity gap {g:.2f}')
-ax.axhline(25000, color=PAL['ink2'], lw=.8, ls=':', label='25,000-patient extract'); ax.axhline(100000, color=PAL['ink2'], lw=.8, ls='--', label='100,000-patient extract')
-ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xticks([.02, .05, .1, .2]); ax.set_xticklabels(['2%', '5%', '10%', '20%']); ax.minorticks_off()
-ax.set_yticks([5000, 10000, 25000, 50000, 100000]); ax.set_yticklabels(['5k', '10k', '25k', '50k', '100k']); ax.set_xlabel('share of the cohort in the subgroup'); ax.set_ylabel('total cohort for the subgroup\nto be assessable')
+ax = fig.add_subplot(gs[0, 2]); ygrid(ax)                                       # (c) subgroup size at one centre against what an equity audit needs
+Ns = np.linspace(150, N_CAP, 30)
+for s, c in ((.05, PAL['seq'][0]), (.10, PAL['seq'][1]), (.20, PAL['seq'][3])):
+    ax.plot(Ns, s * Ns, color=c, lw=1.5, label=f'subgroup of {s:.0%}')
+ax.axhline(max(sg_base, n_gap_pat[.10]), color=PAL['bad'], lw=.9, ls=':', label=f'needed for a 0.10 gap ({max(sg_base, n_gap_pat[.10]):,})')
+ax.set_xlabel('patients at the centre'); ax.set_ylabel('patients in the subgroup'); ax.set_xlim(150, N_CAP); ax.set_ylim(0, 1150)
 ax.legend(loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2, columnspacing=1.0, handlelength=1.4, handletextpad=.4, labelspacing=.3); panel(ax, 'c')
 finish(fig, 15, 'centres_validation_subgroups',
-       "How many centres, how many validation patients, how large a subgroup. (a) Centres needed for the adopted gate to have 80% power for a true gain of +0.03, against the "
-       "between-centre SD of the gain, for three centre sizes: once heterogeneity dominates, more centres help and more patients per centre do not. The dotted line is the gate's minimum. "
-       "(b) Patients for a Level-3 validation (calibration slope SE 0.10, O/E SE 0.10, AUROC half-width 0.05) against prevalence, set against what one centre collects in three years "
-       "and what a 20-centre consortium collects in one. (c) Total cohort at which a subgroup of a given share has enough patients to detect an equal-opportunity gap in sensitivity of "
-       "0.10 or 0.05, against two registry-extract sizes.")
+       "Centres, validation, and subgroups. (a) Context for the benchmark's Level 2, not the plan of this paper: centres needed for the gate to have 80% power for a true gain of +0.03, against the "
+       "between-centre SD of the gain, for three centre sizes; once heterogeneity dominates, more centres help and more patients per centre do not. (b) Patients for a Level-3 silent-mode validation "
+       "(calibration slope SE 0.10, O/E SE 0.10, AUROC half-width 0.05) against prevalence, with the 1,500-patient ceiling and three years of one centre's transplants marked. (c) The size of a "
+       "subgroup at one centre against the roughly 1,000 patients that detecting a 0.10 sensitivity gap needs: no subgroup of a single centre reaches it, so a single-centre equity audit is descriptive.")
 ''')
 
-# =====================================================================================================  9.8  DATA BILL OF MATERIALS
+# =====================================================================================================  9.8  WHAT ONE INSTITUTION CAN RUN
 md(r'''
-## 9.8 The data bill of materials: minimum viable, credible, definitive
+## 9.8 What can one institution run?
 
-Everything above is a requirement on one quantity. This subsection puts them together into **what to collect**, in three packages, with the constraint that binds each number stated. The packages are cumulative in what they must demonstrate:
-
-* **Minimum viable (MVD)** — enough to *test the primary claim* once, honestly: for each data layer, the largest of the registry's per-task requirement (Riley development size for a 50-parameter head, and the paired-power size to show +0.03; §8.4) and the transcriptome learning-curve size of §9.4, spread over the number of centres at which the gate of §8.12 has 80 % power for a +0.03 gain with between-centre SD **τ = 0.02**.
-* **Credible** — enough to support *several claims and an equity audit*: MVD plus the total cohort at which the smallest subgroup with a 10 % share becomes assessable (§9.7), plus, for the registry layers, the Riley size for a 768-parameter embedding head; centres planned at **τ = 0.03**.
-* **Definitive** — enough for a *Level-3* claim: credible plus a prospective validation cohort sized by §9.7, planned at **τ = 0.04**.
-
-For each layer the table reports patients, centres, specimens and what it costs. **Unit costs are planning figures †, not quotes**; they are in one dictionary in the cell below so a reader can change them, and the totals are shown with a ×0.5 / ×2 range.
+This is the subsection that matters for the plan. It takes the calculators above and asks them, for the cohort sizes of one centre, what can be **learned** (the largest head), **shown** (the smallest detectable gain) and **estimated** (the width of an interval), and then goes through the benchmark task by task. The sizes are those a centre actually has: the biopsies it collects in three years, the patients with banked specimens, the temporal test set and development set of a 60/40 split of the ceiling cohort, and the ceiling cohort itself.
 ''')
 
 code(r'''
-# ----------------------------------------------------------------------------- 9.8: the data bill of materials
-UNIT = dict(collect_per_specimen=60, plasma_panel=100, bulk_rnaseq=250, tissue_rna_wsi=450, flow_panel=200, stool_16s=120, scrna_vdj=3000,
-            coordination_per_patient=1500, centre_setup=50_000, registry_access=150_000, ehr_etl_per_centre=25_000, harmonisation_central=200_000)   # USD †
-nreq = need_tbl.set_index('id')['n required']                                  # per-task requirement of §8.4 / §9.1 (max of Riley-50 and paired power for +0.03)
-MIN_NC, K_MIN = 60, GATE['level2_gate']['min_centres']
-def N_for_gate(N_task, tau, d=.03):
-    """Smallest total N >= N_task, and the fewest centres K (>= the gate's minimum), at which the adopted gate has 80 % power with n_c = N/K per centre."""
-    N = max(N_task, K_MIN * MIN_NC)
-    for _ in range(200):
-        for K in range(K_MIN, 250):
-            if N / K < MIN_NC: break
-            if gate_power(K, N / K, d, tau) >= .8: return int(math.ceil(N)), K
-        N *= 1.08
-    return None, None
-sub_need = lambda gap=.10: max(n_for_ci(A_sg, pv_sg, .07), int(np.ceil(_val_parts(A_sg, pv_sg)[0] / .15 ** 2)), n_gap_pat[gap])
-DENSE_N = int(sdf[(sdf.specimen == 'Whole blood PAXgene RNA') & (sdf.schedule == 'weekly to day +56')]['patients to enrol for 300 cases with >= 2 pre-onset draws'].iloc[0])
-c4 = txt_tab.set_index('task')
-def _tx(prefix, col):
-    return [v for k, v in c4[col].items() if k.startswith(prefix)][0]
-LAYERS = [  # key, name, n_task (MVD), primary task for FM-head and validation, smallest subgroup that must be assessable (share), draws per patient (landmark-only for the MVD, the §4.4 protocol, the weekly trajectory schedule), nested trajectory sub-cohort?, assay USD, GB per specimen
- dict(key='A',  name='registry core + outcomes (Tier A)',  n_task=max(nreq[t] for t in ('A1', 'A2', 'A3', 'A4', 'A5')), prim=(.68, .38), fm_head=True, share=.05, draws=(0, 0, 0), dense=False, assay=0, gb=0),
- dict(key='B',  name='EHR timeline (Tier B)',               n_task=max(nreq[t] for t in ('B3', 'B6', 'C3', 'D3', 'D4', 'E1', 'E2', 'E4')), prim=(.68, .30), fm_head=True, share=.05, draws=(0, 0, 0), dense=False, assay=0, gb=0),
- dict(key='C1', name='plasma biomarkers, scheduled draws (Tier C)', n_task=max(nreq[t] for t in ('B1', 'B2', 'B4', 'B5', 'C4', 'C5', 'C6', 'E3')), prim=(.74, .35), fm_head=False, share=.10, draws=(3, 8, 11), dense=True, assay=UNIT['plasma_panel'], gb=.001),
- dict(key='C2', name='blood transcriptome at diagnosis and prodrome (Tier C)', n_task=None, tx=('C4', .72, .30), prim=(.72, .30), fm_head=False, share=.20, draws=(3, 6, 11), dense=True, assay=UNIT['bulk_rnaseq'], gb=6),
- dict(key='C3', name='tissue transcriptome + whole-slide image at diagnosis (Tier C/D)', n_task=None, tx=('C1/C2', .86, .45), prim=(.86, .45), fm_head=False, share=.20, draws=(1.3, 1.3, 1.3), dense=False, assay=UNIT['tissue_rna_wsi'], gb=8),
- dict(key='D',  name='TCR repertoire / single-cell / spatial (Tier D)', n_task=None, prim=None, fm_head=False, share=None, draws=(6, 6, 6), dense=False, assay=UNIT['scrna_vdj'], gb=120),
-]
-TIER_D = {'minimum viable': 80, 'credible': 300, 'definitive': 1000}               # F1 / F2 accessible-n scale of §8.4: nested research cohort
-PKG = (('minimum viable', .02), ('credible', .03), ('definitive', .04))
-TXCOL = {'minimum viable': 'n for +0.02', 'credible': 'n for 80% of it', 'definitive': 'n for 95% of it'}
-bom = []
-for L in LAYERS:
-    for pkg, tau in PKG:
-        if L['key'] == 'D':
-            N, K = TIER_D[pkg], max(1, int(round(TIER_D[pkg] / 100))); binding = 'research cohort size (F1/F2)'; spec_n = N * L['draws'][1]
-        else:
-            if L['n_task']: N_task, binding = L['n_task'], 'per-task n (Riley-50 / paired power)'
-            else:
-                N_task = _tx(L['tx'][0], f"{TXCOL[pkg]} (ρ = 0.8, K = 8)"); binding = {'minimum viable': 'transcriptome learning curve: +0.02 (§9.4)', 'credible': 'transcriptome learning curve: 80% of realisable gain (§9.4)',
-                                                                                        'definitive': 'transcriptome learning curve: 95% of realisable gain (§9.4)'}[pkg]
-            if not np.isfinite(N_task): N_task = _tx(L['tx'][0], 'n for +0.02 (ρ = 0.8, K = 8)')
-            if pkg in ('credible', 'definitive'):
-                cands = {binding: N_task, f'subgroup audit ({L["share"]:.0%} subgroup, §9.7)': int(np.ceil(sub_need(.10) / L['share']))}
-                if L['fm_head']: cands['768-parameter embedding head (Riley)'] = riley_n(768, *L['prim'])['n']
-                binding = max(cands, key=cands.get); N_task = cands[binding]
-            if pkg == 'definitive' and L['prim'] is not None:
-                N_task += validation_n(*L['prim'])['n']; binding += ' + prospective validation (§9.7)'
-            N, K = N_for_gate(N_task, tau)
-            if N != N_task: binding += ' + centres for the gate'
-            draws = L['draws'][0] if pkg == 'minimum viable' else L['draws'][1]
-            spec_n = N * draws + (DENSE_N * (L['draws'][2] - L['draws'][1]) if (L['dense'] and pkg != 'minimum viable') else 0)      # weekly trajectory draws on a nested sub-cohort
-        bom.append(dict(layer=L['name'], key=L['key'], package=pkg, patients=N, centres=K, binding=binding, specimens=spec_n,
-                        specimens_per_patient=spec_n / N, assay_usd=spec_n * L['assay'], collect_usd=spec_n * UNIT['collect_per_specimen'] if L['key'] not in ('A', 'B') else 0.0,
-                        storage_TB=spec_n * L['gb'] / 1000))
-bom = pd.DataFrame(bom)
-# shared prospective infrastructure and retrospective data work, once per package
-shared = []
-for pkg, tau in PKG:
-    q = bom[bom.package == pkg]; pro = q[q.key.isin(['C1', 'C2', 'C3'])]
-    n_pro = int(pro.patients.max()); k_pro = int(pro.centres.max())
-    shared.append(dict(package=pkg, prospective_patients=n_pro, centres=k_pro,
-        coordination=n_pro * UNIT['coordination_per_patient'], centre_setup=k_pro * UNIT['centre_setup'],
-        registry_and_etl=UNIT['registry_access'] + UNIT['harmonisation_central'] + int(q[q.key == 'B'].centres.iloc[0]) * UNIT['ehr_etl_per_centre'],
-        years_consortium=1 + n_pro / (3000 * USABLE)))
-shared = pd.DataFrame(shared).set_index('package')
-cost = pd.DataFrame({pkg: dict(collection=bom[(bom.package == pkg)].collect_usd.sum() + shared.loc[pkg, 'coordination'],
-                               assays=bom[(bom.package == pkg)].assay_usd.sum(), centres_and_data=shared.loc[pkg, 'centre_setup'] + shared.loc[pkg, 'registry_and_etl'],
-                               compute=PROG_H * USD_PER_H) for pkg, _ in PKG}).T
-cost['total'] = cost.sum(axis=1)
-show = bom.copy()
-show['patients'] = show.patients.map(lambda v: f'{v:,}'); show['specimens'] = show.specimens.map(lambda v: f'{v:,.0f}'); show['storage_TB'] = show.storage_TB.map(lambda v: f'{v:,.1f}')
-show['specimens per patient'] = show.specimens_per_patient.map(lambda v: f'{v:.1f}')
-show['assays + collection (USD)'] = [fmt_usd(a + c) for a, c in zip(bom.assay_usd, bom.collect_usd)]
-display(md_table(show[['layer', 'package', 'patients', 'centres', 'specimens per patient', 'specimens', 'storage_TB', 'assays + collection (USD)', 'binding']], max_w=90))
-cd = cost.copy()
-for c in cd.columns: cd[c] = cd[c].map(fmt_usd)
-cd['years to accrue (20-centre consortium, prospective layers)'] = shared.years_consortium.map(lambda v: f'{v:.1f}')
-cd['range (x0.5 / x2)'] = [f'{fmt_usd(.5 * t)} – {fmt_usd(2 * t)}' for t in cost.total]
-print('PROGRAMME COST BY PACKAGE (all unit costs are planning figures †):'); display(md_table(cd, index=True))
+# ----------------------------------------------------------------------------- 9.8 (A) capacity of the cohort sizes one centre has  (Table 9.1)
+N_BIOPSY = int(SPECIMEN_YEARS * TRANSPLANTS_PER_YEAR * .20)                 # patients biopsied for suspected GvHD over three years (about a fifth of transplants) †
+N_DEV, N_TEST = int(.6 * N_CAP), int(.4 * N_CAP)
+SIZES = [(f'biopsies in {SPECIMEN_YEARS} years', N_BIOPSY), ('patients with banked specimens', N_SPEC), ('temporal test set (latest 40 %)', N_TEST), ('temporal development set (earliest 60 %)', N_DEV), ('ceiling cohort', N_CAP)]
+cap_rows = []
+for lab, n in SIZES:
+    n1 = int(n * .35)
+    cap_rows.append({'cohort': lab, 'patients': n, '95% CI half-width of one AUROC (0.72, prev 0.35)': round(1.96 * hm_se(.72, n1, n - n1), 3),
+                     'smallest paired gain shown (80% power, r = 0.85, baseline 0.70)': round(min_detectable_gain(n, .70, .35), 3),
+                     'largest head the cohort supports (AUROC 0.72)': max_params(n, .72, .35)})
+cap_si = pd.DataFrame(cap_rows)
+print('TABLE 9.1 — WHAT THE COHORT SIZES OF ONE CENTRE CAN LEARN, SHOW AND ESTIMATE:'); display(md_table(cap_si))
+mg = lambda n: min_detectable_gain(n, .70, .35)
 ''')
 
 code(r'''
-BANKED = 1287 + 431                                                         # MAGIC day-7 cohort + BMT CTN 1703 (§9.2)
-save_banked = BANKED * (3 * UNIT['collect_per_specimen'] + UNIT['coordination_per_patient']) + BANKED * UNIT['plasma_panel']
-bg = lambda k, pkg, col: bom[(bom.key == k) & (bom.package == pkg)][col].iloc[0]
-c_ = lambda pkg: cost.loc[pkg, 'total']
-display(Markdown(f"""**Reading §9.8 — the answer to "how much, of what, how often".**
-
-* **Minimum viable ({fmt_usd(c_('minimum viable'))}, ≈ {shared.loc['minimum viable', 'years_consortium']:.1f} years of consortium accrual).** Registry core on **{bg('A', 'minimum viable', 'patients'):,}** patients; an EHR timeline on **{bg('B', 'minimum viable', 'patients'):,}**; day-7/day-14/onset plasma biomarkers on **{bg('C1', 'minimum viable', 'patients'):,}** patients ({bg('C1', 'minimum viable', 'specimens'):,.0f} specimens); a blood transcriptome (landmark draws only) on **{bg('C2', 'minimum viable', 'patients'):,}** patients ({bg('C2', 'minimum viable', 'specimens'):,.0f} libraries, {bg('C2', 'minimum viable', 'storage_TB'):,.0f} TB); tissue transcriptome plus whole-slide image on **{bg('C3', 'minimum viable', 'patients'):,}** biopsy-adjudicated patients; and **{bg('D', 'minimum viable', 'patients'):,}** deeply phenotyped patients. It tests the primary claim once and has **no trajectory cohort**, so task B3 and the longitudinal objectives are not testable at this size.
-* **Credible ({fmt_usd(c_('credible'))}).** Adds the **nested weekly trajectory cohort** of **{DENSE_N:,}** patients (§9.5), an equity audit that makes a {sub_need(.10):,}-patient subgroup assessable, and the registry/EHR scale ({bg('A', 'credible', 'patients'):,} and {bg('B', 'credible', 'patients'):,} patients) at which a 768-parameter embedding head can be developed. Blood transcriptome: **{bg('C2', 'credible', 'patients'):,}** patients, {bg('C2', 'credible', 'specimens'):,.0f} libraries.
-* **Definitive ({fmt_usd(c_('definitive'))}).** Adds a prospective Level-3 validation cohort and the heterogeneity (τ = 0.04) that needs **{bg('C1', 'definitive', 'centres')}** centres.
-* **Where the money goes.** Collection and assays are ≈ {100 * (cost.loc['credible', 'collection'] + cost.loc['credible', 'assays']) / c_('credible'):.0f} % of the credible package; compute is **{fmt_usd(PROG_H * USD_PER_H)}**, about {math.log10(c_('credible') / (PROG_H * USD_PER_H)):.0f} orders of magnitude less. Reusing the {BANKED:,} banked MAGIC and BMT CTN 1703 specimens would save about **{fmt_usd(save_banked)}** of collection and day-7 assay cost.
-* **Ranges, not budgets.** Every figure moves with the unit costs (†); the ×0.5/×2 range is in the table, and the *patient* numbers do not depend on the costs at all."""))
+# ----------------------------------------------------------------------------- 9.8 (B) the benchmark, task by task, at one centre
+feas = cards_df[cards_df.one_inst_verdict != '-'][['id', 'readiness', 'tier needed', 'one_inst_n', 'max_head_params', 'min_detectable_gain', 'ci_halfwidth', 'one_inst_verdict']].copy()
+feas = feas.rename(columns={'one_inst_n': 'patients at one centre', 'max_head_params': 'largest head', 'min_detectable_gain': 'smallest gain shown', 'ci_halfwidth': 'AUROC ± (95%)', 'one_inst_verdict': 'verdict at one centre'})
+feas['patients at one centre'] = feas['patients at one centre'].astype(int)
+print(f"TASK FEASIBILITY AT ONE INSTITUTION ({N_CAP:,} EHR timelines, {N_SPEC} with specimens; RUNNABLE = a head of at least 5 parameters and a smallest detectable gain of at most 0.05; ESTIMABLE = AUROC to ±0.10 but no comparison; otherwise OUT OF REACH):")
+display(md_table(feas))
+vs_ids = {v: cards_df[cards_df.one_inst_verdict == v].id.tolist() for v in ('RUNNABLE', 'ESTIMABLE', 'OUT OF REACH')}
+display(Markdown(f"""**Result.** Of the {int((cards_df.one_inst_verdict != '-').sum())} tasks with a numeric target, **{len(vs_ids['RUNNABLE'])} are runnable at one institution** ({', '.join(vs_ids['RUNNABLE'])}), **{len(vs_ids['ESTIMABLE'])} are estimable but cannot support a comparison** ({', '.join(vs_ids['ESTIMABLE'])}), and **{len(vs_ids['OUT OF REACH'])} are out of reach** ({', '.join(vs_ids['OUT OF REACH'])}). The runnable tasks are the EHR-timeline tasks of families A and E and of B6, C3 and D4, plus B1 on the {N_SPEC} patients with specimens; the estimable ones are the specimen-dependent response and prognosis tasks, which a single centre can *describe* with an honest interval and which pooling with other centres would turn into comparisons."""))
 ''')
 
 code(r'''
-# ----------------------------------------------------------------------------- Figure 16: the data bill of materials
-fig = plt.figure(figsize=(FULL, 3.9))
-FW_, FH_ = FULL, 3.9
-axa = fig.add_axes([1.95 / FW_, .50 / FH_, 3.20 / FW_, 2.85 / FH_]); axb = fig.add_axes([5.80 / FW_, .50 / FH_, 1.30 / FW_, 2.85 / FH_])
-ax = axa                                                                        # (a) patients by layer and package
-pk = [p for p, _ in PKG]; keys = [L['key'] for L in LAYERS]
+# ----------------------------------------------------------------------------- 9.8 (C) transcriptome claims at one centre
+ONE = lambda tid: int(cards_df[cards_df.id == tid].one_inst_n.iloc[0])
+TC_NUM = []                                                                 # (learn, show, need) of each fitted-head claim, in order
+def claim_row(claim, head, p_eff, A0, A1, prev, gain, avail, kappa=.9):
+    """A claim 'a head of p_eff parameters adds `gain` AUROC over baseline A0' needs the head to LEARN that gain (learning curve) and the cohort to SHOW it (paired DeLong)."""
+    n_learn = n_for_target(A0 + gain, A0, A1, p_eff, prev, 1.0, 8, kappa); n_show = n_for_delta(A0, gain, prev)
+    need = max(n_learn, n_show) if np.isfinite(n_learn) else float('inf'); TC_NUM.append((n_learn, n_show, need))
+    return {'claim': claim, 'head (effective parameters)': head, 'to learn it': capn(int(math.ceil(n_learn))) if np.isfinite(n_learn) else 'never', 'to show it': capn(n_show),
+            'patients needed': capn(int(math.ceil(need))) if np.isfinite(need) else 'never', 'patients available': avail,
+            'feasible at one centre?': 'yes' if avail >= need else ('marginal' if avail >= .7 * need else 'no')}
+TC_ROWS = [
+ {'claim': 'validate a pre-specified IFN-γ / allograft-rejection tissue score to ±0.10 (AUROC 0.85, prevalence 0.5)', 'head (effective parameters)': '0 (a fixed score)', 'to learn it': '—', 'to show it': capn(n_for_ci(.85, .5, .10)),
+  'patients needed': capn(n_for_ci(.85, .5, .10)), 'patients available': N_BIOPSY, 'feasible at one centre?': 'yes' if N_BIOPSY >= n_for_ci(.85, .5, .10) else 'no'},
+ {'claim': 'same, to ±0.07', 'head (effective parameters)': '0 (a fixed score)', 'to learn it': '—', 'to show it': capn(n_for_ci(.85, .5, .07)),
+  'patients needed': capn(n_for_ci(.85, .5, .07)), 'patients available': N_BIOPSY, 'feasible at one centre?': 'yes' if N_BIOPSY >= n_for_ci(.85, .5, .07) else ('marginal' if N_BIOPSY >= .7 * n_for_ci(.85, .5, .07) else 'no')},
+ claim_row('tissue differential diagnosis (C1/C2): +0.05 over a 0.75 clinical baseline', '10, frozen adapter', 10, .75, .86, .45, .05, ONE('C1')),
+ claim_row('tissue differential diagnosis (C1/C2): +0.05', '64, adapter embedding', 64, .75, .86, .45, .05, ONE('C1')),
+ claim_row('steroid refractoriness (C4): +0.05 over a 0.66 baseline', '10, frozen adapter', 10, .66, .74, .30, .05, ONE('C4')),
+ claim_row('steroid refractoriness (C4): +0.03', '10, frozen adapter', 10, .66, .74, .30, .03, ONE('C4')),
+ claim_row('day-7 blood transcriptome: +0.03 over MAP + clinical (0.72)', '10, frozen adapter', 10, .72, .76, .35, .03, ONE('B1')),
+ {'claim': 'any claim from a head on the whole transcriptome', 'head (effective parameters)': '≈ 40,000 effective', 'to learn it': f'> {N_CAP:,}', 'to show it': '—', 'patients needed': f'> {N_CAP:,}', 'patients available': N_CAP, 'feasible at one centre?': 'no'}]
+tc = pd.DataFrame(TC_ROWS)
+print('TRANSCRIPTOME CLAIMS AT ONE INSTITUTION:'); display(md_table(tc))
+_fmt = lambda x: capn(int(math.ceil(x))) if np.isfinite(x) else 'never'
+display(Markdown(f"""**Reading.** (1) A **pre-specified** tissue score has no fitted parameters, so it needs only enough biopsies to *estimate* its AUROC: {n_for_ci(.85, .5, .10)} for ±0.10 and {n_for_ci(.85, .5, .07)} for ±0.07, against {N_BIOPSY} biopsies in three years — **feasible, and the cleanest transcriptome claim one centre can make.** (2) **Tissue differential diagnosis (C1/C2):** a 10-parameter head *learns* +0.05 over a 0.75 clinical baseline from {_fmt(TC_NUM[0][0])} profiles, but *showing* the gain takes {_fmt(TC_NUM[0][1])}, against {ONE('C1')} eligible patients; a 64-dimensional head needs {_fmt(TC_NUM[1][2])}. (3) **Steroid refractoriness (C4)** needs {_fmt(TC_NUM[2][2])} profiles for +0.05 and {_fmt(TC_NUM[3][2])} for +0.03, against {ONE('C4')}; the **day-7 blood transcriptome** needs {_fmt(TC_NUM[4][2])} for +0.03 over MAP plus clinical covariates, against {ONE('B1')}. Neither is feasible at one centre. (4) **A head on the whole transcriptome** is out of reach. The honest single-centre transcriptome result is therefore: validate a pre-specified tissue score, report the differential-diagnosis gain with its interval, and describe the rest."""))
+
+# ----------------------------------------------------------------------------- 9.8 (D) longitudinal claims at one centre
+P2 = float(sdf[(sdf.specimen == 'Whole blood PAXgene RNA') & (sdf.schedule == 'weekly to day +56')].P_at_least_2.iloc[0])
+lg_rows = []
+for n in (150, 300, N_SPEC):
+    cases = int(n * .35); ev = int(cases * P2)
+    lg_rows.append({'patients with weekly draws to day +56': n, 'expected cases': cases, 'cases with ≥ 2 pre-onset draws': ev, 'AUROC ± (95%) with these cases': round(1.96 * hm_se(.75, ev, n - cases), 3)})
+lg = pd.DataFrame(lg_rows)
+def icc_n(icc, k=3, se=.05):
+    """Patients with k draws in a clinically stable window so that the intraclass correlation (single-draw reliability) has standard error se (Fisher approximation)."""
+    return int(math.ceil(1 + 2 * (1 - icc) ** 2 * (1 + (k - 1) * icc) ** 2 / (k * (k - 1) * se ** 2)))
+icc_tab = pd.DataFrame([{'single-draw reliability': r, 'patients with 3 draws for SE 0.05': icc_n(r), 'with 5 draws': icc_n(r, 5)} for r in (.3, .5, .7)])
+print('LONGITUDINAL (weekly draws to day +56) AT ONE INSTITUTION:'); display(md_table(lg))
+print('MEASURING THE ASSAY RELIABILITY THAT §9.5 NEEDS (replicate draws in a stable window):'); display(md_table(icc_tab))
+''')
+
+code(r'''
+# ----------------------------------------------------------------------------- 9.8 (E) the single-centre gate (Level 1C): operating characteristics
+def level1c_power(n_test, delta, m=None, prev=.35, A1=.70, rho=.85):
+    """P(lower 95 % bound of the paired AUROC difference >= m) on n_test temporal-test patients (closed form)."""
+    m = GATE['level1c_single_centre']['ci_lower_bound_min'] if m is None else m
+    return float(norm.cdf((delta - m) / se_delta(n_test, prev, A1, A1 + delta, rho) - 1.96))
+def delong_est(y, s1, s2):
+    """(difference of AUROCs, its DeLong standard error) for two scores on the same patients."""
+    m, n = int((y == 1).sum()), int((y == 0).sum()); aucs, v01, v10 = [], [], []
+    for s in (s1, s2):
+        X, Y = s[y == 1], s[y == 0]; tx, ty, tz = rankdata(X), rankdata(Y), rankdata(np.r_[X, Y])
+        aucs.append(tz[:m].sum() / (m * n) - (m + 1) / (2 * n)); v01.append((tz[:m] - tx) / n); v10.append(1 - (tz[m:] - ty) / m)
+    S = np.cov(np.vstack(v01)) / m + np.cov(np.vstack(v10)) / n
+    return aucs[1] - aucs[0], math.sqrt(max(S[0, 0] + S[1, 1] - 2 * S[0, 1], 1e-12))
+def sim_level1c(n_test, delta, reps, prev=.35, A1=.70, rho=.85, seed=0):
+    rng = np.random.default_rng(seed); n1 = int(round(n_test * prev)); n0 = n_test - n1; d1, d2 = math.sqrt(2) * norm.ppf(A1), math.sqrt(2) * norm.ppf(A1 + delta)
+    cov = np.array([[1, rho], [rho, 1]]); hit = 0; m = GATE['level1c_single_centre']['ci_lower_bound_min']
+    for _ in range(reps):
+        sp = rng.multivariate_normal([d1, d2], cov, n1); sn = rng.multivariate_normal([0, 0], cov, n0); y = np.r_[np.ones(n1), np.zeros(n0)]
+        dd, se = delong_est(y, np.r_[sp[:, 0], sn[:, 0]], np.r_[sp[:, 1], sn[:, 1]]); hit += (dd - 1.96 * se) >= m
+    return hit / reps
+reps_ = 400 if not QUICK else 60
+chk1c = pd.DataFrame([dict(n_test=N_TEST, true_gain=d, closed_form=level1c_power(N_TEST, d), simulated=sim_level1c(N_TEST, d, reps_)) for d in (.0, .03, .05)])
+chk1c['diff'] = chk1c.simulated - chk1c.closed_form
+print('Level-1C gate: closed-form pass probability vs simulation:'); display(md_table(chk1c.round(3)))
+assert chk1c["diff"].abs().max() < (.08 if not QUICK else .16), 'closed-form Level-1C power disagrees with simulation'
+DS1C = (0., .01, .02, .03, .04, .05, .06)
+oc1c = pd.DataFrame([{'true gain': d, **{f'n_test = {n}': round(level1c_power(n, d), 2) for n in (400, N_TEST, 800)}} for d in DS1C])
+print(f'LEVEL-1C GATE (paired lower bound ≥ +0.01 on a temporal test set) — probability of passing:'); display(md_table(oc1c))
+def n_test_for(delta, power=.8):
+    for n in range(100, 5000, 10):
+        if level1c_power(n, delta) >= power: return n
+n1c = {d: n_test_for(d) for d in (.04, .05, .06)}
+print('test patients for 80 % pass probability:', {d: n1c[d] for d in n1c})
+''')
+
+code(r'''
+# ----------------------------------------------------------------------------- Figure 16: what one institution can resolve
+SZ = [N_BIOPSY, N_SPEC, N_TEST, N_DEV, N_CAP]; SZL = [f'{N_BIOPSY}', f'{N_SPEC}', f'{N_TEST}', f'{N_DEV}', f'{N_CAP:,}']
+fig = plt.figure(figsize=(FULL, 3.3))
+gs = fig.add_gridspec(1, 3, width_ratios=[1.1, 1.0, 1.0], left=.075, right=.985, bottom=.285, top=.875, wspace=.42)
+nn = np.geomspace(100, N_CAP, 40)
+ax = fig.add_subplot(gs[0, 0]); ygrid(ax)                                       # (a) what the sizes resolve
+ax.plot(nn, [min_detectable_gain(int(n), .70, .35) for n in nn], color=PAL['seq'][3], lw=1.6, label='smallest paired gain shown (80% power)')
+ax.plot(nn, [1.96 * hm_se(.72, int(n * .35), int(n) - int(n * .35)) for n in nn], color=PAL['orange'], lw=1.5, ls='--', label='95% CI half-width of one AUROC')
+ax.set_xscale('log'); ax.set_xticks(SZ); ax.set_xticklabels(SZL, fontsize=6.0); ax.minorticks_off(); ax.set_xlim(100, N_CAP * 1.05); ax.set_ylim(0, .12)
+ax.set_xlabel('patients in the cohort'); ax.set_ylabel('AUROC units'); panel(ax, 'a'); ax.legend(loc='upper center', bbox_to_anchor=(.5, -.34), ncol=1, handlelength=1.4, labelspacing=.3)
+ax = fig.add_subplot(gs[0, 1]); ygrid(ax)                                       # (b) largest head
+for A, c in zip((.68, .72, .75), (PAL['seq'][0], PAL['seq'][2], PAL['seq'][3])):
+    ax.plot(nn, [max_params(int(n), A, .35) for n in nn], color=c, lw=1.5, label=f'target AUROC {A:.2f}')
+ax.set_xscale('log'); ax.set_xticks(SZ); ax.set_xticklabels(SZL, fontsize=6.0); ax.minorticks_off(); ax.set_xlim(100, N_CAP * 1.05); ax.set_ylim(0, 32)
+ax.set_xlabel('patients in the cohort'); ax.set_ylabel('largest head the cohort supports\n(parameters)'); panel(ax, 'b'); ax.legend(loc='upper center', bbox_to_anchor=(.5, -.34), ncol=1, handlelength=1.4, labelspacing=.3)
+ax = fig.add_subplot(gs[0, 2]); ygrid(ax)                                       # (c) the single-centre gate
+dg = np.linspace(0, .07, 50)
+for n, c in ((400, PAL['seq'][0]), (N_TEST, PAL['seq'][2]), (800, PAL['seq'][3])):
+    ax.plot(dg, [level1c_power(n, d) for d in dg], color=c, lw=1.5, label=f'{n} test patients')
+ax.axhline(.8, color=PAL['bad'], ls=':', lw=.8); ax.axhline(.05, color=PAL['bad'], ls=':', lw=.8); ax.axvline(.05, color=PAL['ink2'], ls=':', lw=.7)
+ax.set_xlabel('true gain in AUROC'); ax.set_ylabel('probability of passing Level 1C'); ax.set_xlim(0, .07); ax.set_ylim(-.02, 1.03)
+ax.legend(loc='upper center', bbox_to_anchor=(.5, -.25), ncol=1, handlelength=1.4, labelspacing=.3); panel(ax, 'c')
+finish(fig, 16, 'one_institution_capacity',
+       "What one institution can resolve. (a) The smallest paired AUROC gain over a correlated baseline shown with 80% power (solid) and the half-width of one AUROC's 95% interval (dashed), at "
+       "the cohort sizes a centre actually has: 120 biopsies, 420 patients with banked specimens, a 600-patient temporal test set, a 900-patient development set, and the 1,500-patient ceiling. (b) The largest head, in candidate parameters, that those cohorts support: "
+       f"about {max_params(N_SPEC, .72, .35)} on the {N_SPEC} patients with specimens and about {max_params(N_DEV, .72, .35)} on the {N_DEV}-patient development set (AUROC 0.72, prevalence 0.35). (c) Operating characteristics of the single-centre gate (lower bound of the paired interval at least +0.01 on a temporal test set): at "
+       f"{N_TEST} test patients it passes a true gain of +0.05 {level1c_power(N_TEST, .05):.0%} of the time, +0.03 {level1c_power(N_TEST, .03):.0%} and +0.01 or less about {level1c_power(N_TEST, .01):.0%}. Dotted lines mark 80% and 5%.")
+''')
+
+# =====================================================================================================  9.9  THE ONE-INSTITUTION DATA PLAN
+md(r'''
+## 9.9 The one-institution data plan
+
+Three nested packages, each a subset of the next, none above the 1,500-patient ceiling. **S0** needs no new specimens and can start now. **S1** adds specimens banked on the routine blood draws of the next three years. **S2** adds a weekly trajectory cohort inside S1. Specimen counts are computed from the schedule of §4.4, the onset distribution of §9.5 and a case-cohort design for sequencing (every case and a random subcohort of controls), which is the standard way to keep an expensive assay proportional to the number of events rather than the number of patients. No costs are estimated here: the paper's argument does not depend on them, and an institution can price its own assays.
+''')
+
+code(r'''
+# ----------------------------------------------------------------------------- 9.9: the three nested packages
+PREV_AG_ = .35; CASES = int(N_SPEC * PREV_AG_); CTRL_SUB = 100; W_CASES = int(WEEKLY_N * PREV_AG_); W_CTRL = 60
+GB_RNA, GB_TISSUE = 6, 8                                                          # FASTQ per bulk RNA-seq library; RNA-seq + whole-slide image per biopsy (GB) †
+s1_plasma = N_SPEC * 3 + CASES                                                    # d+7, d+14, d+28 on everyone, plus the onset sample of every case
+s1_rna_drawn = N_SPEC * 3 + CASES
+s1_rna_seq = (CASES + CTRL_SUB) * 3 + CASES                                      # case-cohort: all cases + a random subcohort of controls
+s2_plasma = s1_plasma + WEEKLY_N * (11 - 3)                                       # weekly to day +56 on the first WEEKLY_N patients
+s2_rna_seq = s1_rna_seq + (W_CASES + W_CTRL) * (11 - 3)
+plan_si = pd.DataFrame([
+ dict(package='S0  EHR timeline', patients=N_CAP, plasma=0, rna=0, biopsies=0, storage_TB=N_CAP * 10e6 / 1e12, time='12–18 months'),
+ dict(package='S1  + banked specimens', patients=N_CAP, plasma=s1_plasma, rna=s1_rna_seq, biopsies=N_BIOPSY, storage_TB=(s1_rna_seq * GB_RNA + N_BIOPSY * GB_TISSUE) / 1000, time=f'{SPECIMEN_YEARS} years of accrual + 6 months'),
+ dict(package='S2  + weekly trajectory cohort', patients=N_CAP, plasma=s2_plasma, rna=s2_rna_seq, biopsies=N_BIOPSY, storage_TB=(s2_rna_seq * GB_RNA + N_BIOPSY * GB_TISSUE) / 1000, time=f'{SPECIMEN_YEARS} years of accrual + 6 months (weekly draws in the first {WEEKLY_N / (TRANSPLANTS_PER_YEAR * USABLE_FRACTION):.1f} years)')])
+ehr_run = cards_df[(cards_df.readiness == 'R1') & (cards_df.one_inst_verdict == 'RUNNABLE')].id.tolist()
+spec_run = cards_df[(cards_df.readiness != 'R1') & (cards_df.one_inst_verdict.isin(['RUNNABLE']))].id.tolist(); spec_est = cards_df[(cards_df.readiness != 'R1') & (cards_df.one_inst_verdict == 'ESTIMABLE')].id.tolist()
+plan_si['tasks it makes runnable'] = [', '.join(ehr_run), ', '.join(spec_run) or '—', 'B3 trajectory claims (≈ 100 evaluable cases); assay reliability (§9.8)']
+plan_si['plus, estimable only'] = ['—', ', '.join(spec_est), '—']
+disp_si = plan_si.copy()
+for c in ('plasma', 'rna'): disp_si[c] = disp_si[c].map(lambda v: f'{v:,}' if v else '—')
+disp_si['biopsies'] = disp_si.biopsies.map(lambda v: f'{v:,}' if v else '—'); disp_si['storage_TB'] = disp_si.storage_TB.map(lambda v: f'{v:.2f}' if v < 1 else f'{v:.1f}')
+disp_si = disp_si.rename(columns={'plasma': 'plasma aliquots assayed', 'rna': 'RNA-seq libraries', 'biopsies': 'biopsies (RNA + slide)', 'storage_TB': 'storage (TB)'})
+print(f'THE ONE-INSTITUTION DATA PLAN (≤ {N_CAP:,} patients; {N_SPEC} with specimens; {CASES} expected cases; weekly cohort {WEEKLY_N}):'); display(md_table(disp_si))
+assert max(plan_si.patients) <= N_CAP
+
+# ----------------------------------------------------------------------------- Figure 17: the data plan
+FW_, FH_ = FULL, 3.6
+fig = plt.figure(figsize=(FW_, FH_))
+axa = fig.add_axes([1.75 / FW_, .55 / FH_, 3.55 / FW_, 2.50 / FH_]); axb = fig.add_axes([5.85 / FW_, .55 / FH_, 1.25 / FW_, 2.50 / FH_])
+ax = axa                                                                        # (a) the plan as a table
+ROWS = [('EHR timeline', [f'{N_CAP:,}'] * 3), ('plasma aliquots assayed', ['—', f'{s1_plasma:,}', f'{s2_plasma:,}']), ('RNA-seq libraries', ['—', f'{s1_rna_seq:,}', f'{s2_rna_seq:,}']),
+        ('biopsies (RNA + slide)', ['—', f'{N_BIOPSY}', f'{N_BIOPSY}']), ('patients with weekly draws', ['—', '—', f'{WEEKLY_N}']), ('storage (TB)', [f'{plan_si.storage_TB.iloc[i]:.2f}' if plan_si.storage_TB.iloc[i] < 1 else f'{plan_si.storage_TB.iloc[i]:.1f}' for i in range(3)]),
+        ('tasks runnable', [str(len(ehr_run)), str(len(ehr_run) + len(spec_run)), str(len(ehr_run) + len(spec_run))]), ('calendar time', ['1–1.5 y', '3.5 y', '3.5 y'])]
 CELLC = [PAL['seq'][0], PAL['seq'][1], PAL['seq'][2]]
-for i, L in enumerate(LAYERS):
-    for j, p_ in enumerate(pk):
-        r_ = bom[(bom.key == L['key']) & (bom.package == p_)].iloc[0]
-        ax.add_patch(plt.Rectangle((j + .03, i - .46), .94, .92, color=CELLC[j], alpha=.55, lw=0))
-        t_ = ax.text(j + .5, i - .08, f'{r_.patients:,}', ha='center', va='center', fontsize=6.6, fontweight='bold', color=PAL['ink']); t_._ok_overlap = True
-        t2 = ax.text(j + .5, i + .22, f'{int(r_.centres)} centres' if L['key'] != 'D' else f'{int(r_.centres)} site(s)', ha='center', va='center', fontsize=6.0, color=PAL['ink2']); t2._ok_overlap = True
-ax.set_xlim(0, 3); ax.set_ylim(len(LAYERS) - .5, -.5); ax.set_yticks(range(len(LAYERS)))
-ax.set_yticklabels([L['name'].split(' (')[0].replace(' at diagnosis and prodrome', '').replace(' at diagnosis', '').replace('registry core + outcomes', 'registry core').replace('plasma biomarkers, scheduled draws', 'plasma biomarkers').replace('TCR repertoire / single-cell / spatial', 'Tier D research') for L in LAYERS])
-ax.tick_params(axis='y', length=0); ax.xaxis.tick_top(); ax.set_xticks([.5, 1.5, 2.5]); ax.set_xticklabels(['minimum\nviable', 'credible', 'definitive']); ax.tick_params(axis='x', length=0)
+for i, (lab, vals_) in enumerate(ROWS):
+    for j, v_ in enumerate(vals_):
+        ax.add_patch(plt.Rectangle((j + .03, i - .46), .94, .92, color=CELLC[j], alpha=.5, lw=0))
+        t_ = ax.text(j + .5, i, v_, ha='center', va='center', fontsize=6.8, fontweight='bold', color=PAL['ink']); t_._ok_overlap = True
+ax.set_xlim(0, 3); ax.set_ylim(len(ROWS) - .5, -.5); ax.set_yticks(range(len(ROWS))); ax.set_yticklabels([r[0] for r in ROWS]); ax.tick_params(axis='y', length=0)
+ax.xaxis.tick_top(); ax.set_xticks([.5, 1.5, 2.5]); ax.set_xticklabels(['S0\nEHR timeline', 'S1\n+ banked specimens', 'S2\n+ weekly cohort']); ax.tick_params(axis='x', length=0)
 for sp in ax.spines.values(): sp.set_visible(False)
-ax.annotate('a', (0, 1), xycoords='axes fraction', xytext=(-1.85 * 72, 24), textcoords='offset points', fontsize=9, fontweight='bold')
-ax = axb; ygrid(ax, 'x')                                                         # (b) cost
-parts = [('collection', PAL['seq'][1]), ('assays', PAL['seq'][3]), ('centres_and_data', PAL['aqua']), ('compute', PAL['orange'])]
-left = np.zeros(3)
-for nm, c in parts:
-    v = np.array([cost.loc[p, nm] / 1e6 for p in pk]); ax.barh(range(3), v, left=left, color=c, height=.55, zorder=3, label=nm.replace('_', ' ')); left += v
-for i, p_ in enumerate(pk): ax.text(left[i] + .02 * left.max(), i, f'${cost.loc[p_, "total"] / 1e6:.1f}M', va='center', fontsize=6.4, fontweight='bold')
-ax.set_yticks(range(3)); ax.set_yticklabels(['MVD', 'credible', 'definitive']); ax.invert_yaxis(); ax.tick_params(axis='y', length=0); ax.set_xlim(0, left.max() * 1.45)
-ax.set_xlabel('USD millions †'); ax.legend(loc='upper center', bbox_to_anchor=(.5, -.20), ncol=2, columnspacing=.9, handlelength=1.2, handletextpad=.4, labelspacing=.3)
-ax.annotate('b', (0, 1), xycoords='axes fraction', xytext=(0, 24), textcoords='offset points', fontsize=9, fontweight='bold')
-finish(fig, 16, 'data_bill_of_materials',
-       "The data bill of materials. (a) Patients required in each data layer for three packages, with the number of centres at which the gate of section 8.12 has "
-       "80% power; the packages differ in what they must demonstrate (a single honest test of the primary claim; several claims with a subgroup audit; a Level-3 claim "
-       "with prospective validation) and in the between-centre heterogeneity planned for (tau = 0.02, 0.03, 0.04). (b) Programme cost by package, split into specimen "
-       "collection and coordination, assays, centre set-up and data engineering, and compute; unit costs are planning figures. Compute is the smallest bar by orders of magnitude.")
+ax.annotate('a', (0, 1), xycoords='axes fraction', xytext=(-1.7 * 72, 30), textcoords='offset points', fontsize=9, fontweight='bold')
+ax = axb; ygrid(ax, 'x')                                                         # (b) where the patients and specimens come from, over time
+yrs_ = np.arange(0, 8.01, .5); ax.plot(yrs_, [min(N_CAP, TRANSPLANTS_PER_YEAR * t) for t in yrs_], color=PAL['seq'][3], lw=1.6, label='EHR timelines')
+ax.plot(yrs_, [min(N_SPEC, TRANSPLANTS_PER_YEAR * USABLE_FRACTION * t) for t in yrs_], color=PAL['orange'], lw=1.5, ls='--', label='with specimens')
+ax.set_xlabel('years from start'); ax.set_ylabel('patients accrued'); ax.set_xlim(0, 8); ax.set_ylim(0, 1650)
+ax.legend(loc='upper center', bbox_to_anchor=(.5, -.2), ncol=1, handlelength=1.4, labelspacing=.3)
+ax.annotate('b', (0, 1), xycoords='axes fraction', xytext=(-.5 * 72, 30), textcoords='offset points', fontsize=9, fontweight='bold')
+finish(fig, 17, 'one_institution_data_plan',
+       "The one-institution data plan. (a) Three nested packages, none above the 1,500-patient ceiling: S0 uses the EHR timeline only; S1 adds specimens banked on routine draws for three years, "
+       "sequenced as a case-cohort; S2 adds a weekly trajectory cohort inside S1. Counts are computed from the sampling schedule of section 4.4 and the onset distribution of section 9.5. "
+       "(b) Accrual at 200 transplants a year: EHR timelines reach the ceiling in 7.5 years (the first 4.5 years are retrospective), and patients with specimens (70% usable) reach 420 in three.")
+''')
+
+code(r'''
+b1r = cards_df[cards_df.id == 'B1'].iloc[0]
+display(Markdown(f"""**What the plan buys, and what it does not.** S0 alone — the EHR timelines of {N_CAP:,} transplants, no new specimens — runs the whole EHR-based set of tasks at one centre ({', '.join(ehr_run)}) with a head of 10–25 parameters. On the {N_TEST}-patient temporal test set a paired comparison detects a gain of about **+{min_detectable_gain(N_TEST, .70, .35):.3f}** (80 % power), and the stricter Level-1C gate is passed with probability **{level1c_power(N_TEST, .05):.0%} for a true gain of +0.05** and {level1c_power(N_TEST, .03):.0%} for +0.03. S1 adds the specimen-dependent tasks, notably **B1 against the MAGIC algorithm on {int(b1r.one_inst_n)} patients** (a gain of +{b1r.min_detectable_gain:.3f} or more, with a head of about {int(b1r.max_head_params)} parameters) and the tissue-transcriptome claims of §9.4 on about {N_BIOPSY} biopsies. S2 adds the trajectory claims on about 100 evaluable cases and the assay reliability that §9.5 needs. **It does not buy** any claim about another centre, a subgroup audit, a gain below about +0.03, or a Level-3 claim: the single-centre ladder stops at Level 1C (§8.10), and that is a complete, publishable result.
+
+**What to do about the claims it cannot make.** Publish the data card and the harness, keep the event schema identical to the data dictionary of §4, and let other centres run the same code locally and share only summary statistics (§11.0, federated mode). The benchmark's Level 2 and Level 3 then become something a network can attempt without anyone moving patient-level data — and the single-centre result is the first point on that curve."""))
 ''')

@@ -1,6 +1,6 @@
 {
   "version": "ALLO-FM v1",
-  "primary_task": "B1 \u2014 grade II\u2013IV aGvHD by day +100 from the day +7 draw (issued day +9), leave-centre-out across >= 20 centres",
+  "primary_task": "B1 \u2014 grade II\u2013IV aGvHD by day +100 from the day +7 draw (issued day +9); Level 2: leave-centre-out across >= 20 centres; Level 1C: temporal split at one institution",
   "primary_metric": "IPCW time-dependent AUROC at day 100, competing risks = death and relapse",
   "baselines_to_beat": [
     "MAGIC MAP (ST2+REG3a day-7 algorithm) + clinical covariates",
@@ -18,6 +18,25 @@
     "beats_no_pretraining": true,
     "bh_across_family": true,
     "rationale": "interval method, margin and centre count are fixed by the operating characteristics computed in section 8.12"
+  },
+  "level1c_single_centre": {
+    "applies_to": "one institution; no out-of-centre claim",
+    "split": "temporal: earliest 60 % of transplants for development, latest 40 % for test (600 test patients at 1,500)",
+    "interval": "paired DeLong 95 % interval of the AUROC difference on the temporal test set",
+    "ci_lower_bound_min": 0.01,
+    "designed_for_gain": 0.05,
+    "min_test_patients": 600,
+    "must_beat": [
+      "tuned simple model (L0)",
+      "random-weight twin",
+      "no-pretraining"
+    ],
+    "max_head_parameters": "from the Riley criteria for the development set (about 14 at 900 patients, AUROC 0.72, prevalence 0.35)",
+    "claims_not_allowed": [
+      "generalisation to other centres",
+      "subgroup equity",
+      "a gain smaller than +0.03"
+    ]
   },
   "level3_additional": {
     "calibration_slope": [

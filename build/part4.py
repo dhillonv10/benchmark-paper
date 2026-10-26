@@ -17,7 +17,7 @@ md(r"""
 | **Label authority** | the executable functions in §4.6. Where they disagree with a consensus document, the consensus document wins and the functions are patched (a patch release). |
 | **Admissibility** | an event may be read at landmark *L* only if `t_known ≤ L` (§4.1, §4.7). This is enforced by the harness, not left to the modeller. |
 | **Frozen artefacts** | split assignment files, seeds, the gate, and the hash of each are released with the benchmark; a result computed against unreleased splits is not a GvHD-Bench result. |
-| **Governance** | tasks are added by pull request with a task card (§8.2) and a power calculation; a task whose accessible n falls below its computed minimum is published as **under-powered** rather than quietly scored. |
+| **Governance** | tasks are added by pull request with a task card (§8.2) and a power calculation; a task whose eligible n at the running centre cannot support a comparison is published as **estimable** or **out of reach** rather than quietly scored. |
 
 ## 8.1 Cohort definition (the part that is usually left vague)
 
@@ -42,8 +42,8 @@ md(r"""
 1. **Tasks are decisions.** Every task sits at a real decision point on the Figure-1 timeline, with exactly the inputs a clinician would have had at that moment.
 2. **Every task names the model it must beat** — not chance, but what is used today: refined DRI, HCT-CI, EASIX, the MAGIC algorithm probability, onset grade and organ pattern, NIH organ scores, or a tuned gradient-boosted tree on registry variables.
 3. **Competing risks are first-class.** Death and relapse are events, not censoring.
-4. **Splits are hard by default**: leave-centre-out, and temporal for any deployment claim. Random splits are reported only as an upper bound and labelled as such.
-5. **Minimum n is computed, not assumed** (§8.3), and each task carries a *powered / under-powered* verdict that travels with its result.
+4. **Splits are hard by default**: leave-centre-out whenever the data come from several centres, and temporal for any deployment claim; one institution uses the temporal split (Level 1C, §8.10). Random splits are reported only as an upper bound and labelled as such.
+5. **Minimum n is computed, not assumed** (§8.3), and each task carries a *runnable / estimable / out-of-reach* verdict for the running centre that travels with its result.
 6. **A negative result is a result.** The benchmark is designed so that "the foundation model did not beat the baseline" is a reportable, publishable outcome with a clear interpretation.
 """)
 
@@ -55,6 +55,9 @@ Families: **A** pre-transplant planning · **B** early post-transplant prognosis
 code(r'''
 # ----------------------------------------------------------------------------- Riley et al. sample-size criteria (needed by the registry; validated below)
 def r2cs_from_auc(A, prev, n_mc=400_000, seed=0):
+    return _r2cs(round(float(A), 4), round(float(prev), 4), n_mc, seed)
+@functools.lru_cache(maxsize=None)
+def _r2cs(A, prev, n_mc, seed):
     """Model-implied Cox-Snell R^2 for a calibrated model with given AUROC and prevalence (equal-variance binormal)."""
     rng = np.random.default_rng(seed); d = math.sqrt(2) * norm.ppf(A)
     y = rng.random(n_mc) < prev; x = np.where(y, rng.normal(d, 1, n_mc), rng.normal(0, 1, n_mc))
@@ -71,6 +74,17 @@ def riley_n(P, A, prev, S=.9, delta=.05, margin=.05):
     n = max(n1, n2, n3)
     return dict(n=int(math.ceil(n)), events=int(math.ceil(n * prev)), EPP=round(n * prev / P, 1),
                 binding=['shrinkage', 'optimism', 'prevalence'][int(np.argmax([n1, n2, n3]))])
+def max_params(n, A, prev, S=.9, delta=.05, margin=.05):
+    """The LARGEST number of candidate parameters a development set of n patients can support (Riley criteria 1-3 inverted); 0 if n is below the prevalence-precision floor."""
+    if n < (1.96 / margin) ** 2 * prev * (1 - prev): return 0
+    r2 = r2cs_from_auc(A, prev); max_r2 = 1 - math.exp(2 * (prev * math.log(prev) + (1 - prev) * math.log(1 - prev))); S2 = r2 / (r2 + delta * max_r2)
+    return int(math.floor(min(n * (S - 1) * math.log(1 - r2 / S), n * (S2 - 1) * math.log(1 - r2 / S2))))
+def min_detectable_gain(n, A_base, prev, rho=.85, power=.8):
+    """Smallest paired AUROC gain over a baseline of AUROC A_base that n patients detect with the given power (closed-form DeLong)."""
+    for d in np.arange(.005, .30, .0025):
+        if power_delta(n, prev, A_base, A_base + d, rho) >= power: return float(d)
+    return float('nan')
+assert all(max_params(riley_n(P, .72, .35)['n'], .72, .35) in (P, P - 1) for P in (5, 10, 20, 50)), 'max_params must invert riley_n'
 assert abs(24 / ((0.9 - 1) * math.log(1 - 0.288 / 0.9)) - 623) < 1.5     # arithmetic check of criterion 1 on a published worked example
 print('Riley criterion-1 arithmetic check passed; R2_CS(AUROC .75, prev .4) =', round(r2cs_from_auc(.75, .4), 3))
 ''')
@@ -115,7 +129,7 @@ TASKS = [
 ('G1','G robustness','Temporal validation: train ≤ era k, test era k+1 (letermovir, PtCy expansion, ruxolitinib approvals)','as parent task','as parent','as parent','as parent','—','AUROC and calibration drift vs the random-split number','same model, random split',None,None),
 ('G2','G robustness','Leave-centre-out and leave-registry-out transfer (CIBMTR → EBMT)','as parent','as parent','as parent','as parent','—','per-centre AUROC spread; calibration slope per centre','pooled random split',None,None),
 ('G3','G robustness','Subgroup equity: paediatric vs adult, donor type, race/ethnicity, centre volume','as parent','as parent','as parent','as parent','—','worst-subgroup AUROC and calibration; equal-opportunity gap','overall model',None,None),
-('G4','G robustness','Tier ablation: A only → A+B → A+B+C → A+B+C+D','as parent','as parent','progressively','as parent','—','ΔAUROC per added tier, with cost per patient','Tier A model',None,None),
+('G4','G robustness','Tier ablation: A only → A+B → A+B+C → A+B+C+D','as parent','as parent','progressively','as parent','—','ΔAUROC per added tier, with the data elements each tier adds per patient','Tier A model',None,None),
 ('G5','G robustness','Missingness robustness: performance when a modality or a lab stream is absent at inference','as parent','as parent','as parent','as parent','—','AUROC under simulated and natural missingness','complete-case model',None,None),
 ('G6','G robustness','Target-trial emulation: reproduce a published randomised effect (BMT CTN 1703: PTCy/Tac/MMF vs Tac/MTX, GRFS HR 0.64, 95% CI 0.49–0.83 ✓) from registry data','trial eligibility + randomisation-equivalent day','1 year','A (trial-eligibility variables) + model-based adjustment','GRFS (§4.6)','death, relapse (composite)','|log HR(emulated) − log HR(trial)| and coverage of the trial interval by the emulation interval','unadjusted registry comparison; propensity-weighted tuned-tree adjustment',None,None),
 ('G7','G robustness','Negative-control suite: every submission is also run on permuted outcomes (within centre) and on a negative-control exposure (e.g. donor birth month)','as parent','as parent','as parent','permuted / null outcome','—','false-pass rate across the whole suite; must not exceed the nominal level','—',None,None),
@@ -124,8 +138,8 @@ COLS = ['id','family','task','landmark','horizon','inputs allowed (tiers)','outc
         'primary metric','clinical baseline to beat','assumed prevalence','target AUROC']
 reg = pd.DataFrame(TASKS, columns=COLS)
 ok_n = [bool(pd.notna(a) and pd.notna(p)) for a, p in zip(reg['target AUROC'], reg['assumed prevalence'])]
-reg['min n (50-param head)'] = [riley_n(50, a, p)['n'] if o else '' for o, a, p in zip(ok_n, reg['target AUROC'], reg['assumed prevalence'])]
-reg['min n (768-param head)'] = [riley_n(768, a, p)['n'] if o else '' for o, a, p in zip(ok_n, reg['target AUROC'], reg['assumed prevalence'])]
+reg['min n (10-param head)'] = [riley_n(10, a, p)['n'] if o else '' for o, a, p in zip(ok_n, reg['target AUROC'], reg['assumed prevalence'])]
+reg['min n (25-param head)'] = [riley_n(25, a, p)['n'] if o else '' for o, a, p in zip(ok_n, reg['target AUROC'], reg['assumed prevalence'])]
 reg.to_csv(os.path.join(SPEC_DIR, 'task_registry.csv'), index=False)
 print(f'{len(reg)} tasks in {reg.family.nunique()} families; '
       f"{int((reg['target AUROC'].notna()).sum())} have a numeric target and a computed minimum n")
@@ -140,79 +154,85 @@ for fam in reg.family.unique():
 ''')
 
 md(r"""
-## 8.4 Task cards: readiness, accessible n, and the powered / under-powered verdict
+## 8.4 Task cards: readiness, size at one institution, and the feasibility verdict
 
-The registry above says what each task *is*. A benchmark also has to say, for each task, **whether it can be run at all today, with which data, on how many patients, and whether that number is enough.** The cell below attaches those fields and computes the verdict. `readiness` is the honest status:
+The registry above says what each task *is*. A benchmark also has to say, for each task, **whether it can be run at all, with which data, on how many patients, and whether that number is enough.** The cell below attaches those fields and computes the verdict. `readiness` is the honest status:
 
-* **R1 — runnable now** on a registry extract (Tier A/B) with no new collection.
-* **R2 — runnable on an existing biobank** (Tier C: MAGIC / BMT CTN specimens) with a collaboration.
-* **R3 — needs prospective collection** on the 4.4 schedule.
+* **R1 — runnable now** on the centre's own EHR extract (Tier A/B) with no new collection.
+* **R2 — needs banked specimens** (Tier C), which the plan collects prospectively on the routine blood draws (§9.9).
+* **R3 — needs prospective collection** on the 4.4 schedule, including biopsies.
 * **R4 — research-grade only**: a nested sub-cohort, reported as mechanism, never as a deployment claim.
 
-`n accessible` is a deliberately conservative estimate of the patients a serious 2026-era effort could assemble for that specific task, given its landmark eligibility and the data tier it needs. The verdict compares it against two requirements: the Riley minimum to *develop* a 50-parameter head, and the n needed to *demonstrate* a +0.03 AUROC improvement over the task's clinical baseline on a paired test. A task passes only if the accessible n clears both.
+`patients at one centre` is the number of the plan's patients who are eligible for that task — the plan being **up to 1,500 patients with an EHR timeline and about 420 of them with banked specimens** (§9.8) — after the task's own landmark eligibility (alive and outcome-free at the landmark, symptomatic, treated, biopsied …). Three numbers follow from it: the **largest head** the Riley criteria allow at that n, the **smallest paired AUROC gain** over the task's clinical baseline that n can show with 80 % power, and the **half-width of one AUROC's 95 % interval**. The verdict is **RUNNABLE** if the head can have at least 5 parameters and the smallest gain shown is at most +0.05; **ESTIMABLE** if one AUROC can still be estimated to within ±0.10 but no comparison is possible; **OUT OF REACH** otherwise. Tasks that are not a single-AUROC comparison, and R4 research tasks, carry their own criteria instead. The `split protocol` column is the benchmark's protocol; **one institution uses its temporal variant** (earliest 60 % to develop, latest 40 % to test; Level 1C of §8.10), because leave-centre-out needs more than one centre.
 """)
 
 code(r'''
-# ----------------------------------------------------------------------------- task cards: readiness, accessible n, powered verdict (exported with the registry)
-# task id -> (readiness, tier needed, conservative accessible n, split protocol, achievable AUROC range from section 3.2)
-CARDS = {
- 'A1': ('R1', 'A', 120000, 'leave-centre-out + temporal', (.62, .70)), 'A2': ('R1', 'A', 120000, 'leave-centre-out + temporal', (.64, .72)),
- 'A3': ('R1', 'A', 90000, 'leave-centre-out + temporal', (.62, .68)),  'A4': ('R1', 'A', 120000, 'leave-centre-out + temporal', (.64, .70)),
- 'A5': ('R1', 'A', 120000, 'leave-centre-out + temporal', (.68, .76)), 'A6': ('R1', 'A+C', 40000, 'leave-centre-out; counterfactual', (None, None)),
- 'A7': ('R2', 'A', 431, 'randomised arms (BMT CTN 1703)', (None, None)),
- 'B1': ('R2', 'A+B+C', 4000, 'leave-centre-out + temporal', (.74, .80)), 'B2': ('R2', 'A+B+C', 4000, 'leave-centre-out + temporal', (.74, .82)),
- 'B3': ('R1', 'A+B', 15000, 'leave-centre-out; per-day alarms', (.72, .80)), 'B4': ('R2', 'A+B+C', 3000, 'leave-centre-out', (.70, .78)),
- 'B5': ('R2', 'A+B+C', 4000, 'leave-centre-out + temporal', (.72, .80)), 'B6': ('R1', 'A+B', 25000, 'leave-centre-out', (.68, .76)),
- 'C1': ('R3', 'A+B(+C)', 800, 'leave-centre-out; adjudicated', (.78, .88)), 'C2': ('R3', 'A+B', 600, 'leave-centre-out; adjudicated', (.72, .82)),
- 'C3': ('R1', 'A+B', 6000, 'leave-centre-out; decision-analytic', (.72, .80)),
- 'C4': ('R2', 'A+B+C', 2500, 'leave-centre-out', (.68, .76)), 'C5': ('R2', 'A+B+C', 2500, 'leave-centre-out', (.66, .74)),
- 'C6': ('R2', 'A+B+C', 2500, 'leave-centre-out + temporal', (.72, .80)), 'C7': ('R3', 'D', 500, 'leave-centre-out; central read', (None, None)),
- 'C8': ('R1', 'A+B', 8000, 'leave-centre-out', (None, None)),
- 'D1': ('R2', 'A+B', 1200, 'leave-centre-out', (.66, .74)), 'D2': ('R2', 'A+B', 400, 'randomised arms only', (None, None)),
- 'D3': ('R1', 'A+B', 9000, 'leave-centre-out', (.64, .72)), 'D4': ('R1', 'A+B', 20000, 'leave-centre-out', (.68, .76)),
- 'E1': ('R1', 'A+B', 40000, 'leave-centre-out + temporal', (.65, .72)), 'E2': ('R1', 'A+B', 12000, 'leave-centre-out', (.70, .78)),
- 'E3': ('R2', 'A+B', 3000, 'leave-centre-out', (.64, .72)), 'E4': ('R1', 'A+B', 30000, 'leave-centre-out + temporal', (.64, .72)),
- 'E5': ('R1', 'A+B', 20000, 'leave-centre-out; bivariate', (None, None)),
- 'F1': ('R4', 'D', 80, 'leave-recipient-out', (.60, .66)), 'F2': ('R4', 'C+D', 1000, 'no head trained', (None, None)),
- 'F3': ('R4', 'D', 40, 'held-out perturbations', (None, None)),
- 'G1': ('R1', 'as parent', 120000, 'temporal', (None, None)), 'G2': ('R1', 'as parent', 120000, 'leave-registry-out', (None, None)),
- 'G3': ('R1', 'as parent', 120000, 'subgroup within parent split', (None, None)), 'G4': ('R2', 'A->D', 2500, 'nested tiers, same patients', (None, None)),
- 'G6': ('R1', 'A', 8000, 'registry vs trial effect (BMT CTN 1703)', (None, None)), 'G7': ('R1', 'as parent', 120000, 'permutation + negative exposure', (None, None)),
- 'G5': ('R1', 'as parent', 120000, 'simulated + natural missingness', (None, None)),
+# ----------------------------------------------------------------------------- task cards: readiness, size at one institution, feasibility verdict (exported with the registry)
+CARDS = {   # task id -> (readiness, tier needed, split protocol, achievable AUROC range from section 3.2)
+ 'A1': ('R1', 'A', 'leave-centre-out + temporal', (0.62, 0.7)), 'A2': ('R1', 'A', 'leave-centre-out + temporal', (0.64, 0.72)),
+ 'A3': ('R1', 'A', 'leave-centre-out + temporal', (0.62, 0.68)), 'A4': ('R1', 'A', 'leave-centre-out + temporal', (0.64, 0.7)),
+ 'A5': ('R1', 'A', 'leave-centre-out + temporal', (0.68, 0.76)), 'A6': ('R1', 'A+C', 'leave-centre-out; counterfactual', (None, None)),
+ 'A7': ('R2', 'A', 'randomised arms (BMT CTN 1703)', (None, None)), 'B1': ('R2', 'A+B+C', 'leave-centre-out + temporal', (0.74, 0.8)),
+ 'B2': ('R2', 'A+B+C', 'leave-centre-out + temporal', (0.74, 0.82)), 'B3': ('R1', 'A+B', 'leave-centre-out; per-day alarms', (0.72, 0.8)),
+ 'B4': ('R2', 'A+B+C', 'leave-centre-out', (0.7, 0.78)), 'B5': ('R2', 'A+B+C', 'leave-centre-out + temporal', (0.72, 0.8)),
+ 'B6': ('R1', 'A+B', 'leave-centre-out', (0.68, 0.76)), 'C1': ('R3', 'A+B(+C)', 'leave-centre-out; adjudicated', (0.78, 0.88)),
+ 'C2': ('R3', 'A+B', 'leave-centre-out; adjudicated', (0.72, 0.82)), 'C3': ('R1', 'A+B', 'leave-centre-out; decision-analytic', (0.72, 0.8)),
+ 'C4': ('R2', 'A+B+C', 'leave-centre-out', (0.68, 0.76)), 'C5': ('R2', 'A+B+C', 'leave-centre-out', (0.66, 0.74)),
+ 'C6': ('R2', 'A+B+C', 'leave-centre-out + temporal', (0.72, 0.8)), 'C7': ('R3', 'D', 'leave-centre-out; central read', (None, None)),
+ 'C8': ('R1', 'A+B', 'leave-centre-out', (None, None)), 'D1': ('R2', 'A+B', 'leave-centre-out', (0.66, 0.74)),
+ 'D2': ('R2', 'A+B', 'randomised arms only', (None, None)), 'D3': ('R1', 'A+B', 'leave-centre-out', (0.64, 0.72)),
+ 'D4': ('R1', 'A+B', 'leave-centre-out', (0.68, 0.76)), 'E1': ('R1', 'A+B', 'leave-centre-out + temporal', (0.65, 0.72)),
+ 'E2': ('R1', 'A+B', 'leave-centre-out', (0.7, 0.78)), 'E3': ('R2', 'A+B', 'leave-centre-out', (0.64, 0.72)),
+ 'E4': ('R1', 'A+B', 'leave-centre-out + temporal', (0.64, 0.72)), 'E5': ('R1', 'A+B', 'leave-centre-out; bivariate', (None, None)),
+ 'F1': ('R4', 'D', 'leave-recipient-out', (0.6, 0.66)), 'F2': ('R4', 'C+D', 'no head trained', (None, None)),
+ 'F3': ('R4', 'D', 'held-out perturbations', (None, None)), 'G1': ('R1', 'as parent', 'temporal', (None, None)),
+ 'G2': ('R1', 'as parent', 'leave-registry-out', (None, None)), 'G3': ('R1', 'as parent', 'subgroup within parent split', (None, None)),
+ 'G4': ('R2', 'A->D', 'nested tiers, same patients', (None, None)), 'G6': ('R1', 'A', 'registry vs trial effect (BMT CTN 1703)', (None, None)),
+ 'G7': ('R1', 'as parent', 'permutation + negative exposure', (None, None)), 'G5': ('R1', 'as parent', 'simulated + natural missingness', (None, None)),
 }
+
+# ---- what ONE institution could run: ~200 allo-HCTs a year, up to 1,500 patients with an EHR timeline (Tier A/B), 420 with prospectively banked specimens (Tier C/D)   (planning values, †)
+SI = dict(transplants_per_year=TRANSPLANTS_PER_YEAR, ehr_years=EHR_YEARS, specimen_years=SPECIMEN_YEARS, usable=USABLE_FRACTION)
+N_RETRO, N_PRO = N_CAP, N_SPEC               # EHR timelines for N_CAP patients; banked specimens for N_SPEC of them
+ELIG = dict(A1=1, A2=1, A3=.9, A4=1, A5=1, B1=.95, B2=.95, B3=1, B4=.95, B5=.95, B6=.85, C1=.5, C2=.3, C3=.45, C4=.3, C5=.3, C6=.35, C7=.2,
+            D1=.12, D3=.25, D4=.25, E1=.8, E2=.8, E3=.3, E4=.75)       # fraction of transplants that are eligible for the task (alive at the landmark, symptomatic, treated, biopsied ...)
+ELIG_OTHER = dict(A6=.9, C8=.5, E5=.8, G6=.85)                          # the same, for tasks that are not a single-AUROC comparison
+N_ABS = dict(A7=431, D2=400, F1=80, F2=80, F3=40)                       # public trial data (BMT CTN 1703) or the nested research subset of section 7: not the centre's own cohort size
 card_rows = []
 for _, r in reg.iterrows():
-    rd, tier, n_acc, split, ach = CARDS[r.id]
-    a, pv_ = r['target AUROC'], r['assumed prevalence']
-    has = bool(pd.notna(a) and pd.notna(pv_))
-    n_dev = riley_n(50, a, pv_)['n'] if has else None
-    n_del = n_for_delta(a - .03, .03, pv_) if has else None
-    need = max([x for x in (n_dev, n_del) if x]) if has else None
-    verdict = '-' if need is None else ('POWERED' if n_acc >= need else 'UNDER-POWERED')
-    card_rows.append({'id': r.id, 'family': r.family.split()[0], 'readiness': rd, 'tier needed': tier,
-                      'split protocol': split, 'n accessible (est.)': n_acc,
-                      'n to develop (50-param)': n_dev, 'n to show +0.03': n_del,
-                      'achievable AUROC': '' if ach[0] is None else f'{ach[0]:.2f}-{ach[1]:.2f}',
-                      'verdict': verdict})
+    rd, tier, split, ach = CARDS[r.id]
+    A_, pv_ = r['target AUROC'], r['assumed prevalence']
+    n_ = N_ABS.get(r.id, int((N_RETRO if rd == 'R1' else N_PRO) * {**ELIG, **ELIG_OTHER}.get(r.id, 1)))
+    row = {'id': r.id, 'family': r.family.split()[0], 'readiness': rd, 'tier needed': tier, 'split protocol': split, 'one_inst_n': n_,
+           'achievable AUROC': '' if ach[0] is None else f'{ach[0]:.2f}-{ach[1]:.2f}'}
+    if pd.notna(A_) and pd.notna(pv_) and r.id in ELIG:
+        n1_ = max(int(n_ * pv_), 2)
+        pm_ = max_params(n_, A_, pv_); mg_ = min_detectable_gain(n_, A_ - .03, pv_); ci_ = 1.96 * hm_se(A_, n1_, n_ - n1_)
+        row.update({'n to develop (10-param head)': riley_n(10, A_, pv_)['n'], 'n to show +0.03': n_for_delta(A_ - .03, .03, pv_),
+                    'max_head_params': pm_, 'min_detectable_gain': round(mg_, 3), 'ci_halfwidth': round(ci_, 3),
+                    'one_inst_verdict': 'RUNNABLE' if (pm_ >= 5 and mg_ <= .05) else ('ESTIMABLE' if ci_ <= .10 else 'OUT OF REACH')})
+    else:
+        row.update({'one_inst_verdict': '-'})
+    card_rows.append(row)
 cards_df = pd.DataFrame(card_rows)
 reg_full = reg.merge(cards_df.drop(columns=['family']), on='id', how='left')
 reg_full.to_csv(os.path.join(SPEC_DIR, 'task_registry.csv'), index=False)
 cards_df.to_csv(os.path.join(SPEC_DIR, 'task_cards.csv'), index=False)
-vc = cards_df.verdict.value_counts().to_dict()
-print(f"{len(cards_df)} task cards | POWERED: {vc.get('POWERED', 0)} | UNDER-POWERED: {vc.get('UNDER-POWERED', 0)} | "
-      f"not a single-AUROC task: {vc.get('-', 0)}")
+vs = cards_df.one_inst_verdict.value_counts().to_dict()
+print(f"{len(cards_df)} task cards | ONE INSTITUTION ({SI['transplants_per_year']} transplants a year; {N_RETRO:,} EHR timelines, {N_PRO} with specimens): "
+      f"RUNNABLE {vs.get('RUNNABLE', 0)} | ESTIMABLE {vs.get('ESTIMABLE', 0)} | OUT OF REACH {vs.get('OUT OF REACH', 0)} | no single-AUROC verdict {vs.get('-', 0)}")
 print('readiness:', cards_df.readiness.value_counts().sort_index().to_dict())
 display(md_table(cards_df))
 ''')
 
 code(r'''
-pw_now = cards_df[(cards_df.readiness == 'R1') & (cards_df.verdict == 'POWERED')].id.tolist()
-up = cards_df[cards_df.verdict == 'UNDER-POWERED']
-display(Markdown(f"""**Result.** Of {len(cards_df)} tasks, **{(cards_df.verdict == 'POWERED').sum()} are powered** at the accessible sample sizes and **{len(up)} are not**; {(cards_df.verdict == '-').sum()} are not single-AUROC tasks (donor ranking, counterfactual prophylaxis contrasts, multi-label organ involvement, representation quality, robustness audits) and carry their own criteria instead.
+vi = {v: cards_df[cards_df.one_inst_verdict == v].id.tolist() for v in ('RUNNABLE', 'ESTIMABLE', 'OUT OF REACH')}
+n_none = int((cards_df.one_inst_verdict == '-').sum())
+display(Markdown(f"""**Result.** Of {len(cards_df)} tasks, **{len(vi['RUNNABLE'])} are runnable at one institution** ({', '.join(vi['RUNNABLE'])}), **{len(vi['ESTIMABLE'])} are estimable only** ({', '.join(vi['ESTIMABLE'])}) and **{len(vi['OUT OF REACH'])} are out of reach** ({', '.join(vi['OUT OF REACH'])}); the other {n_none} are not single-AUROC comparisons (donor ranking, counterfactual prophylaxis contrasts, multi-label organ involvement, representation quality, robustness audits) or are research-only, and carry their own criteria.
 
-**{len(pw_now)} tasks are both runnable today on a registry extract and adequately powered**: {', '.join(pw_now)}. These are the benchmark's spine: they need a data-use agreement, not a new collection.
+**The runnable tasks are the benchmark's spine at one centre**: they need the centre's own EHR extract (and, for B1, its banked plasma), not a consortium. Section 9.8 repeats the table with the head size and the smallest gain each task can show.
 
-**The under-powered tasks are named, not hidden**: {', '.join(up.id)}. For each, the accessible n and the n required to demonstrate a +0.03 improvement are printed above, so a reader can see exactly how far short the field currently is. Listing these as ordinary leaderboard rows would manufacture precision that does not exist; GvHD-Bench publishes them with the verdict attached, and a positive result on an under-powered task is reported as a hypothesis, never as evidence."""))
+**The estimable and out-of-reach tasks are named, not hidden.** A single centre can *describe* the estimable ones, with an honest interval, and cannot compare models on them; pooling with other centres would turn them into comparisons (Level 2, §8.10). Listing them as ordinary leaderboard rows would manufacture precision that does not exist, so GvHD-Bench publishes them with the verdict attached, and a positive result on a task that cannot support a comparison is reported as a hypothesis, never as evidence."""))
 ''')
 
 
@@ -347,7 +367,7 @@ md(r'''
 | no-pretraining (supervised only) | same question, from the other side |
 | drop each stage-1 objective | which objective carries the transfer? |
 | modality knockout (each of D07/D14/D15/D16/D17/D18/D19) | **premise P2**: is the signal really spread across modalities? |
-| tier ablation A → A+B → A+B+C → A+B+C+D (task G4) | what does each extra data tier buy, per patient cost? |
+| tier ablation A → A+B → A+B+C → A+B+C+D (task G4) | what does each extra data tier buy, per element collected? |
 | pretraining-corpus scaling (10 / 30 / 100 %) | is scale binding, or does it plateau as in the published scaling study? |
 | shared-structure audit (centre decodability, subspace overlap) | **premise P3**: measure ρ before blaming the model |
 | values-masked (every measured value replaced by its training mean, presence kept) | how much of the gain is *what was ordered* rather than *what it showed* (§8.12) |
@@ -395,7 +415,7 @@ assign_splits(cohort, protocol, seed):
 | Reporting the best of many seeds | fine-tuned entries must report ≥ 5 seeds and their spread |
 | Picking the flattering metric | the primary metric is fixed per task card before submission |
 | Silently dropping hard patients | mandatory attrition table (§8.1); missingness is an input, not an exclusion criterion |
-| An under-powered win | the powered/under-powered verdict (§8.4) travels with every result |
+| A win on a task that cannot support a comparison | the feasibility verdict (§8.4) travels with every result |
 
 **Required artefacts for a published GvHD-Bench result.** Benchmark version and artefact hashes; the attrition table; per-task primary metric with CI; per-centre values; calibration slope and intercept; decision-curve net benefit over 10–40 %; all mandatory baselines in the same table; the ablation suite; the leakage audit output; the seed list; and the negative-results table of everything that did not beat its baseline.
 """
@@ -430,8 +450,8 @@ for f in FAMN:
         sub = reg_full[(reg_full.fam == f) & (reg_full.bin == b)].sort_values('id')
         for k, (_, r) in enumerate(sub.iterrows()):
             x = b + .075 + (k % SLOTS) * .5; y = y0 + (k // SLOTS + .5) * ROW
-            v = r.verdict
-            kw = dict(mfc=PAL['aqua'], mec=PAL['aqua']) if v == 'POWERED' else (dict(mfc='none', mec=PAL['orange']) if v == 'UNDER-POWERED' else dict(mfc=PAL['grey2'], mec=PAL['grey']))
+            v = r.one_inst_verdict
+            kw = {'RUNNABLE': dict(mfc=PAL['aqua'], mec=PAL['aqua']), 'ESTIMABLE': dict(mfc='none', mec=PAL['orange']), 'OUT OF REACH': dict(mfc='none', mec=PAL['bad'])}.get(v, dict(mfc=PAL['grey2'], mec=PAL['grey']))
             axm.plot(x, y, MARK[r.readiness], ms=4.4, mew=1.0, **kw, zorder=3)
             axm.text(x + .085, y, r.id, fontsize=6.4, va='center', ha='left', color=PAL['ink'])
     y0 += h + FPAD
@@ -441,33 +461,30 @@ axm.set_yticks([ymid[f] for f in FAMN]); axm.set_yticklabels([f'{f}  {FAMN[f]}' 
 axm.xaxis.tick_top(); axm.set_xticks(np.arange(6) + .5); axm.set_xticklabels(BINS); axm.tick_params(axis='x', length=0)
 for sp in ('left', 'bottom', 'right', 'top'): axm.spines[sp].set_visible(False)
 axm.annotate('a', (0, 1), xycoords='axes fraction', xytext=(-1.3 * 72, 32), textcoords='offset points', fontsize=9, fontweight='bold')
-# (b) accessible / needed, for the 26 tasks that have a numeric requirement
-need = reg_full.dropna(subset=['n to show +0.03']).copy()
-need['req'] = need[['n to develop (50-param)', 'n to show +0.03']].astype(float).max(axis=1)
-need['ratio'] = need['n accessible (est.)'] / need['req']
-need = need.sort_values('ratio').reset_index(drop=True)
-axr.barh(np.arange(len(need)), need.ratio - 1, left=1, height=.68, zorder=3,
-         color=[PAL['aqua'] if v == 'POWERED' else PAL['orange'] for v in need.verdict])
-axr.set_xscale('log'); axr.set_xlim(max(need.ratio.min() * .6, 1e-3), need.ratio.max() * 1.8); axr.axvline(1, color=PAL['ink'], lw=.8, zorder=4)
+# (b) smallest gain one centre can show, for the tasks that have a numeric requirement
+VCOL = {'RUNNABLE': PAL['aqua'], 'ESTIMABLE': PAL['orange'], 'OUT OF REACH': PAL['bad']}
+need = reg_full[reg_full.one_inst_verdict.isin(VCOL)].copy().sort_values('min_detectable_gain').reset_index(drop=True)
+axr.barh(np.arange(len(need)), need.min_detectable_gain, height=.68, zorder=3, color=[VCOL[v] for v in need.one_inst_verdict])
+axr.set_xlim(0, .16); axr.axvline(.05, color=PAL['ink'], lw=.8, ls=':', zorder=4)
 axr.set_yticks(np.arange(len(need))); axr.set_yticklabels(need.id); axr.set_ylim(len(need) - .4, -.6)
-_tk = [t for t in (.01, .1, 1, 10, 100) if axr.get_xlim()[0] <= t <= axr.get_xlim()[1]]
-axr.set_xticks(_tk); axr.set_xticklabels([f'{t:g}' for t in _tk]); axr.minorticks_off()
+axr.set_xticks([0, .05, .10, .15]); axr.set_xticklabels(['0', '.05', '.10', '.15']); axr.minorticks_off()
 axr.tick_params(axis='y', length=0); ygrid(axr, 'x')
-axr.set_xlabel('accessible ÷ needed\n(patients, to show +0.03)')
+axr.set_xlabel('smallest AUROC gain\nshown (80% power)')
 axr.annotate('b', (0, 1), xycoords='axes fraction', xytext=(-.2 * 72, 32), textcoords='offset points', fontsize=9, fontweight='bold')
 fig.legend([plt.Line2D([], [], marker=m, ls='none', ms=4.6, mfc=PAL['ink2'], mec=PAL['ink2']) for m in MARK.values()] +
            [plt.Line2D([], [], marker='o', ls='none', ms=4.6, mfc=PAL['aqua'], mec=PAL['aqua']),
             plt.Line2D([], [], marker='o', ls='none', ms=4.6, mfc='none', mec=PAL['orange'], mew=1.0),
+            plt.Line2D([], [], marker='o', ls='none', ms=4.6, mfc='none', mec=PAL['bad'], mew=1.0),
             plt.Line2D([], [], marker='o', ls='none', ms=4.6, mfc=PAL['grey2'], mec=PAL['grey'])],
-           ['R1 runs on a registry now', 'R2 needs an existing biobank', 'R3 needs prospective collection', 'R4 research only',
-            'powered', 'under-powered', 'not a single-AUROC task'], ncol=4, loc='lower center', bbox_to_anchor=(.5, 0.0),
+           ['R1 EHR timeline only', 'R2 needs banked specimens', 'R3 needs prospective collection', 'R4 research only',
+            'runnable at one centre', 'estimable only', 'out of reach', 'no single-AUROC verdict'], ncol=4, loc='lower center', bbox_to_anchor=(.5, 0.0),
            columnspacing=1.5, handletextpad=.3, labelspacing=.45)
 finish(fig, 7, 'gvhd_bench_structure',
        'GvHD-Bench v1.0. (a) The 40 tasks, grouped by family and by the landmark at which the prediction is made. Marker '
-       'shape is data readiness and colour is the powered verdict; tasks that are not a single-AUROC comparison (donor ranking, '
-       'counterfactual contrasts, representation and robustness audits) are grey. (b) For the 26 tasks with a numeric '
-       'requirement: patients accessible divided by patients needed to demonstrate a +0.03 AUROC gain over the task '
-       'baseline. Bars left of 1 are tasks the field cannot currently settle; they are labelled, not omitted.')
+       'shape is data readiness and colour is the feasibility verdict at one institution (up to 1,500 patients, about 420 with banked specimens); tasks that are not a single-AUROC comparison '
+       '(donor ranking, counterfactual contrasts, representation and robustness audits) and research-only tasks are grey. (b) For the 25 tasks with a numeric '
+       'requirement: the smallest AUROC gain over the task baseline that the eligible patients of one centre can show with 80% power. The dotted line at +0.05 separates runnable from estimable; '
+       'tasks to its right are labelled, not omitted.')
 ''')
 
 
@@ -477,6 +494,7 @@ md(r'''
 |---|---|---|
 | **0** | nothing | — |
 | **1** | "more label-efficient than a tuned simple model" | equal or better at full labels, **and** better at k ≤ 100 labelled patients, paired across centres; beats its random-weight twin |
+| **1C** | "works at this centre" (one institution, **no out-of-centre claim**) | temporal split (earliest 60 % development, latest 40 % test; ≥ 600 test patients at 1,500); the paired DeLong 95 % interval of ΔIPCW-td-AUROC against the tuned simple model has a **lower bound ≥ +0.01** (designed for a true gain of +0.05); a head no larger than the development set supports; beats random-weight twin and no-pretraining; calibration slope and O/E reported |
 | **2** | "better discrimination out-of-centre" | ≥ 20 held-out centres; the **centre-level 95 % t-interval** of ΔIPCW-td-AUROC against the best simple model **and** against the clinical baseline has a **lower bound ≥ +0.01** (the design is powered for a true gain of +0.03; §8.12); improves in ≥ 70 % of held-out centres; survives BH correction across the task family; beats random-weight twin and no-pretraining |
 | **3** | "clinically useful" | Level 2 **plus** calibration slope within 0.8–1.25 and positive net benefit across 10–40 % thresholds in leave-centre-out **and** temporal validation, at n ≥ the Riley minimum, with a prospective silent-mode evaluation and a decision-impact plan |
 | **4** | "improves outcomes" | a prospective trial of the model-guided decision. Nothing short of this licenses the word *improves* |
@@ -488,7 +506,7 @@ code(r'''
 # ----------------------------------------------------------------------------- the pre-stated gate for the ALLO-FM v1 attempt (written to spec/gate.json)
 GATE = dict(
   version='ALLO-FM v1',
-  primary_task='B1 — grade II–IV aGvHD by day +100 from the day +7 draw (issued day +9), leave-centre-out across >= 20 centres',
+  primary_task='B1 — grade II–IV aGvHD by day +100 from the day +7 draw (issued day +9); Level 2: leave-centre-out across >= 20 centres; Level 1C: temporal split at one institution',
   primary_metric='IPCW time-dependent AUROC at day 100, competing risks = death and relapse',
   baselines_to_beat=['MAGIC MAP (ST2+REG3a day-7 algorithm) + clinical covariates',
                      'gradient-boosted trees on 20-40 registry variables (tuned, same splits)',
@@ -497,6 +515,10 @@ GATE = dict(
                    ci_lower_bound_min=0.01, fraction_centres_improved_min=0.70, min_centres=20,
                    beats_random_twin=True, beats_no_pretraining=True, bh_across_family=True,
                    rationale='interval method, margin and centre count are fixed by the operating characteristics computed in section 8.12'),
+  level1c_single_centre=dict(applies_to='one institution; no out-of-centre claim', split='temporal: earliest 60 % of transplants for development, latest 40 % for test (600 test patients at 1,500)',
+                             interval='paired DeLong 95 % interval of the AUROC difference on the temporal test set', ci_lower_bound_min=0.01, designed_for_gain=0.05, min_test_patients=600,
+                             must_beat=['tuned simple model (L0)', 'random-weight twin', 'no-pretraining'], max_head_parameters='from the Riley criteria for the development set (about 14 at 900 patients, AUROC 0.72, prevalence 0.35)',
+                             claims_not_allowed=['generalisation to other centres', 'subgroup equity', 'a gain smaller than +0.03']),
   level3_additional=dict(calibration_slope=[0.8, 1.25], net_benefit_positive_thresholds=[0.10, 0.40],
                          temporal_validation_required=True, min_n='computed per task by riley_n(P, target AUROC, prevalence) and validation_n (section 9.7)'),
   stopping_rule='if Level 1 is not reached on B1 at stage-1 scale, publish the negative result and do not proceed to stage 3',

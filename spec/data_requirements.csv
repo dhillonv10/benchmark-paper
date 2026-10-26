@@ -1,19 +1,4 @@
-layer,key,package,patients,centres,binding,specimens,specimens_per_patient,assay_usd,collect_usd,storage_TB
-registry core + outcomes (Tier A),A,minimum viable,7733,20,per-task n (Riley-50 / paired power),0.0,0.0,0.0,0.0,0.0
-registry core + outcomes (Tier A),A,credible,69945,21,768-parameter embedding head (Riley),0.0,0.0,0.0,0.0,0.0
-registry core + outcomes (Tier A),A,definitive,71122,35,768-parameter embedding head (Riley) + prospective validation (§9.7),0.0,0.0,0.0,0.0,0.0
-EHR timeline (Tier B),B,minimum viable,12076,20,per-task n (Riley-50 / paired power),0.0,0.0,0.0,0.0,0.0
-EHR timeline (Tier B),B,credible,78399,21,768-parameter embedding head (Riley),0.0,0.0,0.0,0.0,0.0
-EHR timeline (Tier B),B,definitive,79700,35,768-parameter embedding head (Riley) + prospective validation (§9.7),0.0,0.0,0.0,0.0,0.0
-"plasma biomarkers, scheduled draws (Tier C)",C1,minimum viable,4706,20,per-task n (Riley-50 / paired power),14118.0,3.0,1411800.0,847080.0,0.014118
-"plasma biomarkers, scheduled draws (Tier C)",C1,credible,10120,25,"subgroup audit (10% subgroup, §9.7)",84773.0,8.376778656126483,8477300.0,5086380.0,0.084773
-"plasma biomarkers, scheduled draws (Tier C)",C1,definitive,10865,41,"subgroup audit (10% subgroup, §9.7) + prospective validation (§9.7)",90733.0,8.350943396226414,9073300.0,5443980.0,0.09073300000000001
-blood transcriptome at diagnosis and prodrome (Tier C),C2,minimum viable,2591,36,transcriptome learning curve: +0.02 (§9.4) + centres for the gate,7773.0,3.0,1943250.0,466380.0,46.638
-blood transcriptome at diagnosis and prodrome (Tier C),C2,credible,5060,32,"subgroup audit (20% subgroup, §9.7)",36715.0,7.2559288537549405,9178750.0,2202900.0,220.29
-blood transcriptome at diagnosis and prodrome (Tier C),C2,definitive,14793,39,transcriptome learning curve: 95% of realisable gain (§9.4) + prospective validation (§9.7) + centres for the gate,95113.0,6.429595078753464,23778250.0,5706780.0,570.678
-tissue transcriptome + whole-slide image at diagnosis (Tier C/D),C3,minimum viable,2591,36,transcriptome learning curve: +0.02 (§9.4) + centres for the gate,3368.3,1.3,1515735.0,202098.0,26.9464
-tissue transcriptome + whole-slide image at diagnosis (Tier C/D),C3,credible,5060,32,"subgroup audit (20% subgroup, §9.7)",6578.0,1.3,2960100.0,394680.0,52.624
-tissue transcriptome + whole-slide image at diagnosis (Tier C/D),C3,definitive,5721,50,"subgroup audit (20% subgroup, §9.7) + prospective validation (§9.7)",7437.3,1.3,3346785.0,446238.0,59.498400000000004
-TCR repertoire / single-cell / spatial (Tier D),D,minimum viable,80,1,research cohort size (F1/F2),480.0,6.0,1440000.0,28800.0,57.6
-TCR repertoire / single-cell / spatial (Tier D),D,credible,300,3,research cohort size (F1/F2),1800.0,6.0,5400000.0,108000.0,216.0
-TCR repertoire / single-cell / spatial (Tier D),D,definitive,1000,10,research cohort size (F1/F2),6000.0,6.0,18000000.0,360000.0,720.0
+package,patients,plasma,rna,biopsies,storage_TB,time,tasks it makes runnable,"plus, estimable only"
+S0  EHR timeline,1500,0,0,0,0.015,12–18 months,"A1, A2, A3, A4, A5, B6, C3, D4, E1, E2, E4",—
+S1  + banked specimens,1500,1407,888,120,6.288,3 years of accrual + 6 months,B1,"B2, B4, B5, C1, C2, C5, C6"
+S2  + weekly trajectory cohort,1500,3783,2192,120,14.112,3 years of accrual + 6 months (weekly draws in the first 2.1 years),B3 trajectory claims (≈ 100 evaluable cases); assay reliability (§9.8),—

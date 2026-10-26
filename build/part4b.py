@@ -308,3 +308,29 @@ md(r"""
 | Subgroup rule: a subgroup is **assessed** only if it has the events §9.7 requires, otherwise reported as *not assessable* | prevents false reassurance on small groups | task G3 |
 | Label reliability: ≥ 10 % of outcomes double-read, κ ≥ 0.8, else the attenuation of §9.7 is applied to every n | label noise caps discrimination and inflates n | §8.1 cohort definition |
 """)
+
+
+md(r"""
+## 8.15 The few-shot protocol (modelled on EHRSHOT)
+
+The closest published template for a benchmark of this kind is **EHRSHOT** (arXiv 2307.02028; NeurIPS 2023 Datasets and Benchmarks) ✓. It uses one institution's records (6,739 patients), 15 clinical prediction tasks, and a **few-shot protocol**: a pretrained model is kept frozen, a logistic-regression head is fitted on *k* positive and *k* negative patients with *k* ∈ {1, 2, 4, 8, 12, 16, 24, 32, 48, 64, 128}, hyperparameters are chosen on an equal number of validation patients, and performance is measured on the full test split ✓. That is the right scale for one centre, and it makes *label efficiency* — the actual promise of a foundation model — the primary object. GvHD-Bench adopts it, with two changes: events are rare and censored, so the metric is IPCW time-dependent AUROC under competing risks with the leave-centre-out or temporal split of §8.7; and *k* is capped by the events the task has (never more than half of them).
+
+**Protocol.** For each task: *k* ∈ {8, 16, 32, 64, 128} patients with the event and *k* without, five random draws; head hyperparameters on an equal-sized validation draw; scored on the full test split; the per-task curve of AUROC against *k* is reported with its spread across draws, and a rank aggregate across tasks gives one number per model. Comparators are the same as everywhere else (§8.5). A model **wins at few labels** only if it beats the tuned simple model at *k* ≤ 64 per class, paired across draws.
+
+**What a head of *P* parameters can reach at *k* labels** follows from the learning curve of a plug-in linear head (§9.4; closed form, validated there by simulation): the table below is the expected AUROC at a new patient set when the head has *P* effective parameters and the signal it is learning has a ceiling AUROC of 0.75.
+""")
+
+code(r'''
+# ----------------------------------------------------------------------------- 8.15: expected AUROC of a P-parameter head fitted on k positives + k negatives (ceiling 0.75)
+def kshot_auc(k, A_ceiling, P, prev=.5):
+    """Expected AUROC of a plug-in linear head with P effective parameters fitted on k cases + k controls (n = 2k), at a ceiling AUROC A_ceiling."""
+    D2 = 2 * norm.ppf(A_ceiling) ** 2; return float(norm.cdf(math.sqrt(D2 / 2) / math.sqrt(1 + P / (D2 * prev * (1 - prev) * 2 * k))))
+KS_FS = (8, 16, 32, 64, 128)
+fs_rows = [{'effective parameters P': P, **{f'k = {k}': round(kshot_auc(k, .75, P), 3) for k in KS_FS},
+            'k per class for within 0.02 of the ceiling': next((k for k in range(2, 20001) if kshot_auc(k, .75, P) >= .73), None)} for P in (3, 5, 10, 25, 64)]
+fs = pd.DataFrame(fs_rows)
+print('EXPECTED AUROC of a head with P effective parameters, fitted on k cases + k controls (ceiling 0.75):'); display(md_table(fs))
+assert kshot_auc(10 ** 6, .75, 10) > .7499 and kshot_auc(8, .75, 64) < kshot_auc(8, .75, 5), 'k-shot formula must approach the ceiling and fall with P'
+kw = lambda P: fs[fs['effective parameters P'] == P]['k per class for within 0.02 of the ceiling'].iloc[0]
+display(Markdown(f"""**Reading.** A head with 5–10 effective parameters is within 0.02 of a 0.75 ceiling at **{kw(5)}–{kw(10)} patients per class**, which is inside EHRSHOT's range and inside any single centre's event counts; a 25-parameter head needs **{kw(25)}** per class and a 64-parameter adapter head **{kw(64)}**. This is the quantitative reason the plan fits **small heads on a frozen or lightly adapted model** (§7.2): head size, not model size, sets how many labels one centre needs."""))
+''')

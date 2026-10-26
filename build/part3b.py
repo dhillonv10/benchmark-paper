@@ -47,20 +47,26 @@ display(md_table(budget))
 ''')
 
 md(r'''
-## 7.2 Corpus size, compute-optimal model size, and the bill
+## 7.2 What one institution can train: a small model, or a released one fine-tuned
 
-Given tokens per patient, the corpus is patients × tokens. The compute model is deliberately explicit, because "it is cheap" is a claim that has to survive its own assumptions:
+A single transplant centre does roughly 150–250 allogeneic transplants a year, so this paper plans on a **ceiling of 1,500 patients** (≈ 7.5 years of one large centre; §9.9). At that size the right question is not "how big a model can we pretrain?" but "**what do we adapt, and how small must the part we train be?**" We lay out a ladder, cheapest first; each rung must beat the one below it on the same patients (that comparison *is* the benchmark's Level 1C, §8.10):
 
-* **Model size.** The compute-optimal ratio from transformer scaling work is near **20 unique tokens per parameter** †; we use it to set $N=D/20$, and also report a 10× smaller, over-trained model (200 tokens per parameter), which is what one deploys.
-* **Training FLOPs per token** $=6N+12\,L\,d\,T$ (forward and backward; the second term is attention over a context of $T=2{,}048$ tokens, with width $d=64L$) †. Attention is not negligible at these model sizes, so a bare $6ND$ would understate the cost by about half.
-* **Passes over the data.** A registry corpus is small, so we train **4 epochs**; repeating data up to about four times is close to lossless in the language-model literature †.
-* **Throughput.** An A100-80GB peaks at $312$ TFLOP/s in bf16 †. Small models do not saturate it: we plan at **30 % utilisation** and report a pessimistic 15 % and an optimistic 45 %.
-* **Price.** **\$2.00 per A100-hour** on-demand †.
+| Rung | Model | What is trained at the centre | Needs |
+|---|---|---|---|
+| **L0** | tuned simple model (penalised logistic / gradient-boosted trees on 20–40 registry variables) | 20–40 coefficients or trees | CPU |
+| **L1** | **tiny timeline transformer trained from scratch** on the centre's own event timelines | ≈ 0.5 M parameters (compute-optimal for the centre's corpus, below) | one GPU for minutes |
+| **L2** | **a released pretrained EHR foundation model, frozen, with a small head** (EHRSHOT's protocol: pretrained weights frozen, a logistic-regression head fitted on k labelled patients) | **a head of ≤ 5–25 parameters**, the size the cohort can support (Table 9.1) | embeddings for 1,500 patients: minutes; the weights may need a data-use agreement and a code-vocabulary mapping ✓ |
+| **L3** | the same model fine-tuned with low-rank adapters (LoRA) | ≈ 10⁶ adapter parameters, strongly shrunk | one GPU for an hour |
+| (L4) | registry-scale pretraining (tens of millions of parameters, 10⁵ patients) | — | a network, not a centre; **not part of this plan** |
+
+The released rung is not hypothetical: the EHRSHOT release includes **CLMBR-T-base, a 141 M-parameter transformer pretrained on 2.57 M patients' structured records, whose weights are frozen and used with a logistic-regression head fitted on 1–128 labelled patients per class** ✓ (access requires a data-use agreement). MOTOR (143 M parameters, time-to-event pretraining) is a second published option ✓. We do not claim either transfers to allo-HCT; whether it does is the first thing the benchmark measures.
+
+**Compute model, stated once.** Compute-optimal size ≈ 20 unique tokens per parameter †; training FLOPs per token $=6N+12\,L\,d\,T$ (attention over $T=2{,}048$ tokens, width $d=64L$) †; 4 passes over a small corpus †; an A100-80GB peaks at 312 TFLOP/s in bf16 and a small model sustains about 30 % of it (we show 15–45 %) †. We report **GPU-time only**.
 ''')
 
 code(r'''
-# ----------------------------------------------------------------------------- corpus -> model size -> FLOPs (6N + attention) -> GPU-hours -> dollars, with a utilisation range
-A100_PEAK, USD_PER_H, CTX, EPOCHS = 312e12, 2.00, 2048, 4          # bf16 peak FLOP/s; $/A100-hour; context length; passes over the corpus
+# ----------------------------------------------------------------------------- 7.2: corpus -> model size -> FLOPs (6N + attention) -> GPU-hours, at the scale of ONE institution
+A100_PEAK, CTX, EPOCHS = 312e12, 2048, 4                           # bf16 peak FLOP/s; context length; passes over the corpus
 MFU = dict(pessimistic=.15, planned=.30, optimistic=.45)            # fraction of peak that a small model sustains
 def shape_for(N):
     """Depth and width at aspect ratio 64 (d = 64 L, N = 12 L d^2 = 49,152 L^3)."""
@@ -72,64 +78,50 @@ def fmt_n(v):
     for s, u in ((1e9, 'B'), (1e6, 'M'), (1e3, 'k')):
         if v >= s: return f'{v / s:.3g}{u}'
     return f'{v:.3g}'
-def fmt_usd(v):
-    if v < .5: return '<$1'
-    if v < 1e4: return f'${v:,.0f}'
-    if v < 1e6: return f'${v / 1e3:,.0f}k'
-    return f'${v / 1e6:.1f}M' if v < 1e7 else f'${v / 1e6:,.0f}M'
 def fmt_h(v): return '<0.01 h' if v < .01 else (f'{v:.2g} h' if v < 10 else f'{v:,.0f} h')
+def fmt_t(h):
+    """GPU time in the unit a person thinks in."""
+    return f'{h * 3600:.0f} s' if h < .02 else (f'{h * 60:.0f} min' if h < 2 else f'{h:.1f} h')
 
-PATIENT_COUNTS = [(1_000, 'one centre, 5 years'), (10_000, 'one large centre, 25 y / small consortium'),
-                  (100_000, 'multi-registry extract (realistic CIBMTR/EBMT ask)'), (470_000, 'CIBMTR full (2017 figure)')]
 rows = []
-for n_pat, label in PATIENT_COUNTS:
-    for tiers, tpp in (('A', tok_by_tier['A']), ('A+B', tok_by_tier['B']), ('A+B+C', tok_by_tier['C'])):
-        D = n_pat * tpp
-        for ratio, rname in ((20, 'compute-optimal (20 tok/param)'), (200, 'over-trained (200 tok/param)')):
-            N = D / ratio; fl = train_flops(N, D); L, d = shape_for(N)
-            rows.append(dict(patients=n_pat, cohort=label, tiers=tiers, tokens=D, regime=rname, params=N, L=L, d=d, flops=fl,
-                             hours=a100_hours(fl), hours_pess=a100_hours(fl, MFU['pessimistic']), hours_opt=a100_hours(fl, MFU['optimistic'])))
-cmp = pd.DataFrame(rows); cmp['usd'] = cmp.hours * USD_PER_H
-show = cmp[cmp.regime.str.startswith('compute-optimal')]
-display(md_table(pd.DataFrame({'patients': [f'{v:,}' for v in show.patients], 'cohort': show.cohort.values, 'tiers': show.tiers.values,
-    'corpus tokens': [fmt_n(v) for v in show.tokens], 'parameters': [fmt_n(v) for v in show.params], 'shape (L x d)': [f'{l} x {d}' for l, d in zip(show.L, show.d)],
-    'training FLOPs': [f'{v:.1e}' for v in show.flops],
-    'A100-hours (15% / 30% / 45% MFU)': [f'{fmt_h(a)} / {fmt_h(b)} / {fmt_h(c)}' for a, b, c in zip(show.hours_pess, show.hours, show.hours_opt)],
-    'cost at 30%': [fmt_usd(v) for v in show.usd]})))
+for n_pat in (150, 500, 1000, N_CAP):
+    for tiers, tpp in (('A', tok_by_tier['A']), ('A+B', tok_by_tier['B'])):
+        D = n_pat * tpp; N = D / 20; fl = train_flops(N, D); L, d = shape_for(N)
+        rows.append(dict(patients=n_pat, tiers=tiers, tokens=D, params=N, L=L, d=d, flops=fl, hours=a100_hours(fl), hours_pess=a100_hours(fl, MFU['pessimistic']), hours_opt=a100_hours(fl, MFU['optimistic'])))
+cmp = pd.DataFrame(rows)
+display(md_table(pd.DataFrame({'patients': [f'{v:,}' for v in cmp.patients], 'tiers': cmp.tiers.values, 'corpus tokens': [fmt_n(v) for v in cmp.tokens],
+    'compute-optimal parameters': [fmt_n(v) for v in cmp.params], 'shape (L x d)': [f'{l} x {d}' for l, d in zip(cmp.L, cmp.d)], 'training FLOPs': [f'{v:.1e}' for v in cmp.flops],
+    'A100 time (15% / 30% / 45% utilisation)': [f'{fmt_t(a)} / {fmt_t(b)} / {fmt_t(c)}' for a, b, c in zip(cmp.hours_pess, cmp.hours, cmp.hours_opt)]})))
 
-# ---------- the realistic target configuration, then the whole programme enumerated run by run
-TARGET = dict(patients=100_000, tiers='A+B', tokens_per_patient=tok_by_tier['B'])
-D_t = TARGET['patients'] * TARGET['tokens_per_patient']; N_opt, N_small = D_t / 20, D_t / 200
-C_main = train_flops(N_opt, D_t); gpu_opt = a100_hours(C_main); gpu_small = a100_hours(train_flops(N_small, D_t))
+# ---------- the ladder at the ceiling cohort (1,500 patients, Tier A+B)
+TARGET = dict(patients=N_CAP, tiers='A+B', tokens_per_patient=tok_by_tier['B'])
+D_t = TARGET['patients'] * TARGET['tokens_per_patient']
+N_tiny = D_t / 20; C_tiny = train_flops(N_tiny, D_t); H_tiny = a100_hours(C_tiny)                       # L1: from scratch
+N_REL = 141e6; C_ft = train_flops(N_REL, D_t, epochs=3); H_ft = a100_hours(C_ft)                        # L3: full fine-tune of a released 141 M model (upper bound)
+C_emb = 2 * N_REL * D_t; H_emb = a100_hours(C_emb)                                                      # L2: one forward pass to extract frozen embeddings
+L_rel, d_rel = shape_for(N_REL); N_LORA = 2 * 8 * d_rel * 4 * L_rel                                    # LoRA rank 8 on the four attention matrices of every layer
 def programme(D):
-    """The whole programme, run by run, for a corpus of D unique tokens: (component, number of runs, FLOPs per run)."""
-    N0 = D / 20; C0 = train_flops(N0, D)
-    return [('main pretraining run, 3 seeds', 3, C0),
-            ('scaling study: 5 model sizes (N/8 ... 2N) x 4 data fractions (1/8 ... 1)', 20,
-             sum(train_flops(N0 * m, D * f) for m in (1 / 8, 1 / 4, 1 / 2, 1, 2) for f in (1 / 8, 1 / 4, 1 / 2, 1)) / 20),
-            ('ablation suite (§8.8): 16 variants x 3 seeds at half scale', 48, train_flops(N0 / 2, D / 2)),
-            ('modality adapters: 5 adapters x 3 seeds', 15, .05 * C0),
-            ('downstream fine-tuning: 40 tasks x 24 leave-centre-out folds x 3 seeds', 2880, .002 * C0)]
+    """The whole one-institution programme, run by run, for a corpus of D unique tokens: (component, number of runs, FLOPs per run)."""
+    Nt = D / 20
+    return [('L1 tiny model from scratch, 3 seeds', 3, train_flops(Nt, D)),
+            ('L1 ablations (§8.8): 12 variants x 3 seeds', 36, train_flops(Nt, D)),
+            ('L2 frozen released model: embeddings for the whole cohort, 3 vintages of the cohort', 3, 2 * N_REL * D),
+            ('L3 LoRA fine-tune of the released model, 3 seeds', 3, .67 * train_flops(N_REL, D, epochs=3)),
+            ('k-shot head fits: 25 tasks x 6 values of k x 5 draws (CPU, negligible)', 750, 1e9)]
 PROG = programme(D_t)
-prog = pd.DataFrame(PROG, columns=['component', 'runs', 'FLOPs per run'])
-prog['total FLOPs'] = prog.runs * prog['FLOPs per run']; prog['A100-hours'] = prog['total FLOPs'].map(a100_hours)
-prog['share'] = prog['total FLOPs'] / prog['total FLOPs'].sum()
-PROG_FLOPS = float(prog['total FLOPs'].sum()); PROG_H = float(prog['A100-hours'].sum())
-PROG_H_RANGE = (a100_hours(PROG_FLOPS, MFU['optimistic']), a100_hours(PROG_FLOPS, MFU['pessimistic']))
-LLM_FLOPS = 6 * 7e9 * 2e12                                                    # a 7B-parameter language model on 2T tokens †
-OOM_VS_LLM = math.log10(LLM_FLOPS / PROG_FLOPS)
-print(f"ALLO-FM v1 target: {TARGET['patients']:,} patients x {TARGET['tokens_per_patient']:,} tokens = {D_t / 1e9:.2f}B tokens")
-print(f"  compute-optimal : {N_opt / 1e6:.0f}M params ({shape_for(N_opt)[0]} layers x width {shape_for(N_opt)[1]}), {C_main:.1e} FLOPs, {fmt_h(gpu_opt)} on one A100 at 30% MFU = {fmt_usd(gpu_opt * USD_PER_H)}")
-print(f"  smaller, over-trained: {N_small / 1e6:.1f}M params, {fmt_h(gpu_small)}")
-display(md_table(pd.DataFrame({'component': prog.component, 'runs': prog.runs.map(lambda v: f'{v:,}'),
-    'A100-hours': prog['A100-hours'].map(fmt_h), 'share': prog.share.map(lambda v: f'{100 * v:.0f} %')})))
-print(f"whole programme: {PROG_FLOPS:.1e} FLOPs = {fmt_h(PROG_H)} at 30% MFU (range {fmt_h(PROG_H_RANGE[0])} - {fmt_h(PROG_H_RANGE[1])}) = {fmt_usd(PROG_H * USD_PER_H)}; "
-      f"{OOM_VS_LLM:.1f} orders of magnitude below a 7B language model ({LLM_FLOPS:.1e} FLOPs)")
-# sensitivity: the token budget per patient is the softest input (tokenisation choices change it by a factor of a few)
-sens = pd.DataFrame([dict(**{'tokens per patient': f'x{m:g}  ({TARGET["tokens_per_patient"] * m:,.0f})'},
-                          **{'corpus tokens': fmt_n(D_t * m), 'compute-optimal parameters': fmt_n(D_t * m / 20),
-                             'one run, A100-hours': fmt_h(a100_hours(train_flops(D_t * m / 20, D_t * m))),
-                             'programme, A100-hours': fmt_h(a100_hours(sum(r_ * f_ for _, r_, f_ in programme(D_t * m))))}) for m in (.25, .5, 1, 2, 4)])
+prog = pd.DataFrame(PROG, columns=['component', 'runs', 'FLOPs per run']); prog['total FLOPs'] = prog.runs * prog['FLOPs per run']; prog['A100 time'] = prog['total FLOPs'].map(a100_hours)
+PROG_FLOPS = float(prog['total FLOPs'].sum()); PROG_H = float(prog['A100 time'].sum()); PROG_H_RANGE = (a100_hours(PROG_FLOPS, MFU['optimistic']), a100_hours(PROG_FLOPS, MFU['pessimistic']))
+LLM_FLOPS = 6 * 7e9 * 2e12; OOM_VS_LLM = math.log10(LLM_FLOPS / PROG_FLOPS)                           # a 7B-parameter language model on 2T tokens †
+display(md_table(pd.DataFrame({'component': prog.component, 'runs': prog.runs.map(lambda v: f'{v:,}'), 'A100 time': prog['A100 time'].map(fmt_t)})))
+lad = pd.DataFrame([
+    ('L0 tuned simple model', '20–40 coefficients', 'CPU, seconds'),
+    ('L1 tiny timeline model from scratch', f'{fmt_n(N_tiny)} parameters ({shape_for(N_tiny)[0]} layers x width {shape_for(N_tiny)[1]})', f'{fmt_t(H_tiny)} on one A100 ({fmt_t(a100_hours(C_tiny) * 10)} on a laptop GPU)'),
+    ('L2 released 141 M model, frozen, small head', 'a head of at most 5–25 parameters (Table 9.1)', f'embeddings for {N_CAP:,} patients: {fmt_t(H_emb)} on one A100; head fits on CPU'),
+    ('L3 released model + LoRA (rank 8)', f'{fmt_n(N_LORA)} adapter parameters', f'{fmt_t(.67 * H_ft)} per run (full fine-tune upper bound {fmt_t(H_ft)})')], columns=['rung', 'what is trained', 'compute'])
+display(md_table(lad))
+print(f"whole one-institution programme: {PROG_FLOPS:.1e} FLOPs = {fmt_t(PROG_H)} on one A100 at 30% utilisation (range {fmt_t(PROG_H_RANGE[0])} - {fmt_t(PROG_H_RANGE[1])}); {OOM_VS_LLM:.1f} orders of magnitude below a 7B language model")
+sens = pd.DataFrame([dict(**{'tokens per patient': f'x{m:g}  ({TARGET["tokens_per_patient"] * m:,.0f})'}, **{'corpus tokens': fmt_n(D_t * m), 'tiny-model parameters': fmt_n(D_t * m / 20),
+                             'L1 run': fmt_t(a100_hours(train_flops(D_t * m / 20, D_t * m))), 'programme': fmt_t(a100_hours(sum(r_ * f_ for _, r_, f_ in programme(D_t * m))))}) for m in (.25, .5, 1, 2, 4)])
 display(md_table(sens))
 ''')
 
@@ -144,42 +136,40 @@ for i, v in enumerate(vals): ax.text(i, v * 1.12, f'{v:,}', ha='center', va='bot
 ax.set_yscale('log'); ax.set_ylim(100, 4e4); ax.set_xticks(range(4))
 ax.set_xticklabels(['A\nregistry', '+B\nEHR', '+C\nassays', '+D\nresearch'])
 ax.set_ylabel('event tokens per patient'); ax.set_xlabel('data tier (cumulative)'); panel(ax, 'a')
-ax = fig.add_subplot(gs[0, 1]); ygrid(ax)                                       # (b) compute-optimal size
+ax = fig.add_subplot(gs[0, 1]); ygrid(ax)                                       # (b) what a centre's own corpus supports, against a released model
+pp = np.array([150, 300, 500, 1000, 1500])
 for tiers, c in (('A', PAL['seq'][0]), ('A+B', PAL['seq'][3])):
-    q = cmp[(cmp.tiers == tiers) & (cmp.regime.str.startswith('compute'))].sort_values('patients')
-    ax.plot(q.patients, q.params / 1e6, marker='o', ms=3.4, color=c, lw=1.6, label=f'Tier {tiers}', zorder=3)
-band = ax.axhspan(30, 200, color=PAL['aqua'], alpha=.16, lw=0, label='ALLO-FM v1: 30–200 M')
-ax.set_xscale('log'); ax.set_yscale('log'); ax.set_ylim(1e-2, 2e4); ax.set_xlim(7e2, 7e5)
-ax.set_xlabel('patients in the pretraining corpus'); ax.set_ylabel('compute-optimal size (M parameters)')
-ax.legend(loc='upper left', labelspacing=.3); panel(ax, 'b')
-ax = fig.add_subplot(gs[0, 2]); ygrid(ax)                                       # (c) the bill
-REF = [('one run', gpu_opt, PAL['aqua']), ('programme', PROG_H, PAL['seq'][2]), ('7B LLM', a100_hours(LLM_FLOPS), PAL['grey'])]
-ax.bar(range(3), [r[1] for r in REF], color=[r[2] for r in REF], width=.6, zorder=3)
-for i, (lab, v, c) in enumerate(REF):
-    ax.text(i, v * 1.6, f'{fmt_h(v)}\n{fmt_usd(v * USD_PER_H)}', ha='center', va='bottom', fontsize=6.4, fontweight='bold')
-ax.set_yscale('log'); ax.set_ylim(1, 1e8); ax.set_xticks(range(3)); ax.set_xticklabels([r[0] for r in REF])
+    ax.plot(pp, [tok_by_tier[tiers if tiers == 'A' else 'B'] * n / 20 / 1e6 for n in pp], marker='o', ms=3.4, color=c, lw=1.6, label=f'compute-optimal, Tier {tiers}', zorder=3)
+ax.axhline(141, color=PAL['aqua'], lw=1.3, ls='--', label='released model (141 M)')
+ax.set_xscale('log'); ax.set_yscale('log'); ax.set_ylim(3e-3, 400); ax.set_xlim(120, 2000); ax.set_xticks([150, 300, 500, 1000, 1500]); ax.set_xticklabels(['150', '300', '500', '1,000', '1,500']); ax.minorticks_off()
+ax.set_xlabel('patients at one institution'); ax.set_ylabel('model size (M parameters)')
+ax.legend(loc='upper center', bbox_to_anchor=(.5, -.25), ncol=1, handlelength=1.4, labelspacing=.3); panel(ax, 'b')
+ax = fig.add_subplot(gs[0, 2]); ygrid(ax)                                       # (c) compute
+REF = [('L1\nrun', H_tiny, PAL['aqua']), ('L3\nrun', .67 * H_ft, PAL['seq'][2]), ('all\nruns', PROG_H, PAL['seq'][3]), ('7B\nLLM', a100_hours(LLM_FLOPS), PAL['grey'])]
+ax.bar(range(len(REF)), [r[1] for r in REF], color=[r[2] for r in REF], width=.6, zorder=3)
+for i, (lab, v, c) in enumerate(REF): ax.text(i, v * 1.7, fmt_t(v) if v < 100 else f'{v:,.0f} h', ha='center', va='bottom', fontsize=6.4, fontweight='bold')
+ax.set_yscale('log'); ax.set_ylim(1e-3, 3e7); ax.set_xticks(range(len(REF))); ax.set_xticklabels([r[0] for r in REF])
 ax.set_ylabel('A100-hours (log scale)'); panel(ax, 'c')
 finish(fig, 6, 'training_requirements',
-       'Training requirements, computed from the data specification. (a) Event tokens per patient, cumulative across data '
-       'tiers: the EHR timeline (Tier B) supplies nearly all of them, and the deep assays add almost none while costing the '
-       'most to obtain. (b) Compute-optimal model size at 20 tokens per parameter: a realistic corpus implies tens to '
-       'low hundreds of millions of parameters, not billions (Tier A+B+C lies on the A+B line). (c) Pretraining cost at '
-       '$2 per A100-hour, 30% utilisation and 4 epochs: one run (100,000 patients, Tier A+B), the whole enumerated programme (§7.2 table), and a general 7B language model. '
-       'Compute is not the binding constraint; assay and collection cost is (§9.8).')
+       'What one institution has to train. (a) Event tokens per patient, cumulative across data tiers: the EHR timeline (Tier B) supplies nearly all of them, and the '
+       'deep assays add almost none. (b) The compute-optimal size of a model trained from scratch on a centre\'s own corpus (up to 1,500 patients) is a fraction of a million '
+       'parameters, two to three orders below a released 141 M-parameter model (dashed), which is why the plan adapts a released model with a small head rather than '
+       'pretraining. (c) GPU time on one A100 at 30% utilisation: a tiny model from scratch, one LoRA fine-tune of the released model, the whole enumerated programme, and '
+       'a general 7B language model for scale. Compute is not the binding constraint.')
 ''')
 
 code(r'''
 stor = pd.DataFrame([
- ('A  registry core',        '~50 kB',     '~5 GB',                 'structured coded fields only'),
- ('B  EHR timeline',         '~2–10 MB',   '~0.2–1 TB',             'labs, drugs, vitals, note embeddings'),
- ('C  biospecimen assays',   '~0.1–1 GB',  '~10–100 TB',            'bulk RNA-seq, flow FCS, 16S, proteomics; realistically on 10⁴ patients → 1–10 TB'),
- ('D  deep phenotyping',     '~5–50 GB',   'not feasible at 10⁵',   'scRNA + VDJ, whole-slide images, spatial; realistically 10²–10³ patients'),
-], columns=['tier', 'storage per patient', 'for 100,000 patients', 'note'])
+ ('A  registry core',        '~50 kB',     f'{50e3 * N_CAP / 1e6:.0f} MB',          'structured coded fields only'),
+ ('B  EHR timeline',         '~2–10 MB',   f'{2e6 * N_CAP / 1e9:.0f}–{10e6 * N_CAP / 1e9:.0f} GB', 'labs, drugs, vitals, note embeddings'),
+ ('C  biospecimen assays',   '~0.1–1 GB',  f'{.1 * N_SPEC:.0f}–{1 * N_SPEC:.0f} GB (on {N_SPEC} patients)',  'bulk RNA-seq, flow FCS, 16S, plasma panels'),
+ ('D  deep phenotyping',     '~5–50 GB',   'a nested research subset of 50–100 patients: 0.3–5 TB', 'scRNA + VDJ, whole-slide images'),
+], columns=['tier', 'storage per patient', f'for the plan ({N_CAP:,} patients)', 'note'])
 display(md_table(stor))
-display(Markdown(f"""**Reading §7.** For the realistic target — **{TARGET['patients']:,} patients with Tier A+B data, ≈ {D_t/1e9:.2f} billion event tokens** — the compute-optimal model is **{N_opt/1e6:.0f} M parameters** ({shape_for(N_opt)[0]} layers, width {shape_for(N_opt)[1]}), trainable in **{fmt_h(gpu_opt)} on one A100** ({C_main:.1e} FLOPs, attention included, 4 epochs, 30 % utilisation; {fmt_h(a100_hours(C_main, MFU['optimistic']))}–{fmt_h(a100_hours(C_main, MFU['pessimistic']))} across the utilisation range). A smaller **{N_small/1e6:.1f} M-parameter** model trained for ten times as many token passes costs {fmt_h(gpu_small)} and is far cheaper to serve. Enumerating the *whole* programme — three seeds, a 20-run scaling study, a 48-run ablation suite, five adapters and 2,880 downstream fine-tunes — gives **{PROG_FLOPS:.1e} FLOPs ≈ {fmt_h(PROG_H)} on one A100 ≈ {fmt_usd(PROG_H * USD_PER_H)}**, which is **{OOM_VS_LLM:.1f} orders of magnitude** below a 7B-parameter language model. The sensitivity table shows that even a 4× error in the token budget, in either direction, leaves the programme at the scale of GPU-hours to GPU-days on a single device, not a cluster.
+display(Markdown(f"""**Reading §7.** At the ceiling cohort — **{N_CAP:,} patients with Tier A+B data, ≈ {D_t / 1e6:.0f} million event tokens** — the compute-optimal model trained from scratch is only **{fmt_n(N_tiny)} parameters**, trainable in **{fmt_t(H_tiny)} on one A100** (about {fmt_t(a100_hours(C_tiny) * 10)} on a laptop GPU). That is a legitimate baseline (L1) and a useful one, but it will not carry the foundation-model claim on its own: a model that small has seen little. The foundation-model claim therefore rests on **L2 and L3 — adapting a released model that was pretrained on millions of patients** — and on keeping the part trained at the centre small: extracting frozen embeddings for the whole cohort takes {fmt_t(H_emb)}, and the head fitted on them has at most 5–25 parameters (Table 9.1), because that is all {N_CAP:,} patients can support. Enumerating the *whole* programme (three seeds, twelve ablations, three cohort vintages, three LoRA fine-tunes and 750 head fits) gives **{PROG_FLOPS:.1e} FLOPs ≈ {fmt_t(PROG_H)} on one A100** ({fmt_t(PROG_H_RANGE[0])}–{fmt_t(PROG_H_RANGE[1])} across the utilisation range), **{OOM_VS_LLM:.1f} orders of magnitude** below a 7B-parameter language model. Even a 4× error in the token budget, in either direction, leaves it on one GPU.
 
 **Three conclusions that should shape how this project is proposed.**
-1. **Do not ask for a GPU cluster; ask for data access.** The binding constraints are the registry study proposal, the data-use agreement and the biobank collaboration — not compute. The compute for the whole programme is a few GPU-days; the assays and specimen collection of §9.8 cost three to four orders of magnitude more. A plan whose critical path is hardware procurement has misidentified its own bottleneck. The real engineering cost is the harness (§11.0), not the training run.
-2. **The right model is small.** At ~10⁹ tokens, anything above a few hundred million parameters is past compute-optimal and will be data-limited; the published single-cell scaling study found performance plateauing well before current corpus sizes ✓, and MOTOR — the closest clinical analogue — is a 143 M-parameter model ✓. Anyone proposing a multi-billion-parameter GvHD model should be asked which tokens it is going to read.
-3. **Tier C/D data buys information, not tokens.** Panel (a) makes this unusually clear: the deep assays contribute a handful of tokens per patient (7,580 → 7,628) while costing the most to acquire. Their value must therefore be demonstrated per-patient by modality knockout (§8.8) and tier ablation (task G4), never assumed from volume."""))
+1. **Do not ask for a cluster, and do not pretrain.** The binding constraints are the patients (≤ {N_CAP:,}), the labels, and the data-use agreement for a released model — not compute. The real engineering effort is the harness (§11.0), not the training run.
+2. **The part trained at the centre must be small**: a tiny model from scratch (L1) or a ≤ 25-parameter head on a released model's embeddings (L2). A head of several hundred parameters (a raw embedding) needs far more patients than one centre has (Figure 11c) and is not proposed.
+3. **Tier C/D data buys information, not tokens.** The deep assays contribute a handful of tokens per patient (7,580 → 7,628), so their value must be demonstrated per patient by modality knockout (§8.8) and tier ablation (task G4), never assumed from volume."""))
 ''')

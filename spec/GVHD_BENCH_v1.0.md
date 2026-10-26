@@ -26,10 +26,10 @@ or were censored before L are excluded from that task and appear in its attritio
 
 ## 3 Tasks
 
-40 tasks in 7 families. Powered at accessible n: 15; under-powered: 11; not single-AUROC tasks: 14.
+40 tasks in 7 families. At one institution (up to 1,500 patients, 420 with banked specimens): runnable 12; estimable only: 9; out of reach: 4; no single-AUROC verdict: 15.
 
 Full machine-readable definitions: `task_registry.csv` (all fields) and `task_cards.csv`
-(readiness, accessible n, requirements, verdict). Columns are documented in notebook 8.3-8.4.
+(readiness, eligible patients at one centre, requirements, verdict). Columns are documented in notebook 8.3-8.4.
 
 ### Family A pre-HCT
 
@@ -43,8 +43,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out + temporal
 - readiness: R1 · tier needed: A
 - assumed prevalence: 0.38 · target AUROC: 0.68 · achievable (notebook 3.2): 0.62-0.70
-- n accessible (est.): 120,000 · n to develop (50-param): 4554.0 · n to show +0.03: 887.0
-- **verdict: POWERED**
+- eligible patients at one centre: 1,500 · n for a 10-parameter head: 911.0 · n to show +0.03: 887.0
+- **verdict at one centre: RUNNABLE**
 
 **A2 — Grade III–IV aGvHD by day +100**
 
@@ -56,8 +56,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out + temporal
 - readiness: R1 · tier needed: A
 - assumed prevalence: 0.13 · target AUROC: 0.7 · achievable (notebook 3.2): 0.64-0.72
-- n accessible (est.): 120,000 · n to develop (50-param): 7733.0 · n to show +0.03: 1785.0
-- **verdict: POWERED**
+- eligible patients at one centre: 1,500 · n for a 10-parameter head: 1547.0 · n to show +0.03: 1785.0
+- **verdict at one centre: RUNNABLE**
 
 **A3 — cGvHD requiring systemic therapy by 2 years**
 
@@ -69,8 +69,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out + temporal
 - readiness: R1 · tier needed: A
 - assumed prevalence: 0.33 · target AUROC: 0.65 · achievable (notebook 3.2): 0.62-0.68
-- n accessible (est.): 90,000 · n to develop (50-param): 6997.0 · n to show +0.03: 985.0
-- **verdict: POWERED**
+- eligible patients at one centre: 1,350 · n for a 10-parameter head: 1400.0 · n to show +0.03: 985.0
+- **verdict at one centre: RUNNABLE**
 
 **A4 — GRFS at 1 year**
 
@@ -82,8 +82,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out + temporal
 - readiness: R1 · tier needed: A
 - assumed prevalence: 0.52 · target AUROC: 0.68 · achievable (notebook 3.2): 0.64-0.70
-- n accessible (est.): 120,000 · n to develop (50-param): 4315.0 · n to show +0.03: 837.0
-- **verdict: POWERED**
+- eligible patients at one centre: 1,500 · n for a 10-parameter head: 863.0 · n to show +0.03: 837.0
+- **verdict at one centre: RUNNABLE**
 
 **A5 — Non-relapse mortality at 1 year**
 
@@ -95,8 +95,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out + temporal
 - readiness: R1 · tier needed: A
 - assumed prevalence: 0.18 · target AUROC: 0.7 · achievable (notebook 3.2): 0.68-0.76
-- n accessible (est.): 120,000 · n to develop (50-param): 5921.0 · n to show +0.03: 1368.0
-- **verdict: POWERED**
+- eligible patients at one centre: 1,500 · n for a 10-parameter head: 1185.0 · n to show +0.03: 1368.0
+- **verdict at one centre: RUNNABLE**
 
 **A6 — Donor ranking: order candidate donors by predicted GRFS**
 
@@ -108,8 +108,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out; counterfactual
 - readiness: R1 · tier needed: A+C
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 40,000 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 1,350 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 **A7 — Prophylaxis-platform benefit (PtCy/Tac/MMF vs Tac/MTX) for this pair**
 
@@ -121,8 +121,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: randomised arms (BMT CTN 1703)
 - readiness: R2 · tier needed: A
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 431 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 431 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 ### Family B early
 
@@ -136,8 +136,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out + temporal
 - readiness: R2 · tier needed: A+B+C
 - assumed prevalence: 0.35 · target AUROC: 0.72 · achievable (notebook 3.2): 0.74-0.80
-- n accessible (est.): 4,000 · n to develop (50-param): 3103.0 · n to show +0.03: 854.0
-- **verdict: POWERED**
+- eligible patients at one centre: 399 · n for a 10-parameter head: 621.0 · n to show +0.03: 854.0
+- **verdict at one centre: RUNNABLE**
 
 **B2 — Severe (grade III–IV) aGvHD by day +100 from day +14**
 
@@ -149,8 +149,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out + temporal
 - readiness: R2 · tier needed: A+B+C
 - assumed prevalence: 0.13 · target AUROC: 0.75 · achievable (notebook 3.2): 0.74-0.82
-- n accessible (est.): 4,000 · n to develop (50-param): 4705.0 · n to show +0.03: 1603.0
-- **verdict: UNDER-POWERED**
+- eligible patients at one centre: 399 · n for a 10-parameter head: 941.0 · n to show +0.03: 1603.0
+- **verdict at one centre: ESTIMABLE**
 
 **B3 — 7-day-ahead rolling onset alarm (continuous early warning)**
 
@@ -162,8 +162,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out; per-day alarms
 - readiness: R1 · tier needed: A+B
 - assumed prevalence: 0.04 · target AUROC: 0.75 · achievable (notebook 3.2): 0.72-0.80
-- n accessible (est.): 15,000 · n to develop (50-param): 12076.0 · n to show +0.03: 4722.0
-- **verdict: POWERED**
+- eligible patients at one centre: 1,500 · n for a 10-parameter head: 2416.0 · n to show +0.03: 4722.0
+- **verdict at one centre: ESTIMABLE**
 
 **B4 — Lower-GI aGvHD specifically by day +100 from day +14**
 
@@ -175,8 +175,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out
 - readiness: R2 · tier needed: A+B+C
 - assumed prevalence: 0.22 · target AUROC: 0.72 · achievable (notebook 3.2): 0.70-0.78
-- n accessible (est.): 3,000 · n to develop (50-param): 4102.0 · n to show +0.03: 1132.0
-- **verdict: UNDER-POWERED**
+- eligible patients at one centre: 399 · n for a 10-parameter head: 821.0 · n to show +0.03: 1132.0
+- **verdict at one centre: ESTIMABLE**
 
 **B5 — NRM at 1 year from day +7**
 
@@ -188,8 +188,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out + temporal
 - readiness: R2 · tier needed: A+B+C
 - assumed prevalence: 0.18 · target AUROC: 0.75 · achievable (notebook 3.2): 0.72-0.80
-- n accessible (est.): 4,000 · n to develop (50-param): 3632.0 · n to show +0.03: 1229.0
-- **verdict: POWERED**
+- eligible patients at one centre: 399 · n for a 10-parameter head: 727.0 · n to show +0.03: 1229.0
+- **verdict at one centre: ESTIMABLE**
 
 **B6 — Relapse by 1 year from day +30 (GvL trade-off partner)**
 
@@ -201,8 +201,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out
 - readiness: R1 · tier needed: A+B
 - assumed prevalence: 0.24 · target AUROC: 0.72 · achievable (notebook 3.2): 0.68-0.76
-- n accessible (est.): 25,000 · n to develop (50-param): 3883.0 · n to show +0.03: 1065.0
-- **verdict: POWERED**
+- eligible patients at one centre: 1,275 · n for a 10-parameter head: 777.0 · n to show +0.03: 1065.0
+- **verdict at one centre: RUNNABLE**
 
 ### Family C diagnosis & acute course
 
@@ -216,8 +216,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out; adjudicated
 - readiness: R3 · tier needed: A+B(+C)
 - assumed prevalence: 0.45 · target AUROC: 0.8 · achievable (notebook 3.2): 0.78-0.88
-- n accessible (est.): 800 · n to develop (50-param): 1475.0 · n to show +0.03: 631.0
-- **verdict: UNDER-POWERED**
+- eligible patients at one centre: 210 · n for a 10-parameter head: 381.0 · n to show +0.03: 631.0
+- **verdict at one centre: ESTIMABLE**
 
 **C2 — Is this rash GvHD, drug eruption, or engraftment syndrome?**
 
@@ -229,8 +229,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out; adjudicated
 - readiness: R3 · tier needed: A+B
 - assumed prevalence: 0.5 · target AUROC: 0.75 · achievable (notebook 3.2): 0.72-0.82
-- n accessible (est.): 600 · n to develop (50-param): 2176.0 · n to show +0.03: 726.0
-- **verdict: UNDER-POWERED**
+- eligible patients at one centre: 126 · n for a 10-parameter head: 436.0 · n to show +0.03: 726.0
+- **verdict at one centre: ESTIMABLE**
 
 **C3 — Will this patient need a GI biopsy (triage) / can biopsy be avoided?**
 
@@ -242,8 +242,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out; decision-analytic
 - readiness: R1 · tier needed: A+B
 - assumed prevalence: 0.45 · target AUROC: 0.78 · achievable (notebook 3.2): 0.72-0.80
-- n accessible (est.): 6,000 · n to develop (50-param): 1717.0 · n to show +0.03: 674.0
-- **verdict: POWERED**
+- eligible patients at one centre: 675 · n for a 10-parameter head: 381.0 · n to show +0.03: 674.0
+- **verdict at one centre: RUNNABLE**
 
 **C4 — Steroid-refractory aGvHD by day +28 of therapy**
 
@@ -255,8 +255,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out
 - readiness: R2 · tier needed: A+B+C
 - assumed prevalence: 0.3 · target AUROC: 0.72 · achievable (notebook 3.2): 0.68-0.76
-- n accessible (est.): 2,500 · n to develop (50-param): 3358.0 · n to show +0.03: 925.0
-- **verdict: UNDER-POWERED**
+- eligible patients at one centre: 126 · n for a 10-parameter head: 672.0 · n to show +0.03: 925.0
+- **verdict at one centre: OUT OF REACH**
 
 **C5 — Day +28 overall response (CR/PR vs NR) to first-line steroids**
 
@@ -268,8 +268,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out
 - readiness: R2 · tier needed: A+B+C
 - assumed prevalence: 0.35 · target AUROC: 0.7 · achievable (notebook 3.2): 0.66-0.74
-- n accessible (est.): 2,500 · n to develop (50-param): 3786.0 · n to show +0.03: 888.0
-- **verdict: UNDER-POWERED**
+- eligible patients at one centre: 126 · n for a 10-parameter head: 758.0 · n to show +0.03: 888.0
+- **verdict at one centre: ESTIMABLE**
 
 **C6 — NRM at 6 months from aGvHD onset**
 
@@ -281,8 +281,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out + temporal
 - readiness: R2 · tier needed: A+B+C
 - assumed prevalence: 0.3 · target AUROC: 0.75 · achievable (notebook 3.2): 0.72-0.80
-- n accessible (est.): 2,500 · n to develop (50-param): 2558.0 · n to show +0.03: 864.0
-- **verdict: UNDER-POWERED**
+- eligible patients at one centre: 147 · n for a 10-parameter head: 512.0 · n to show +0.03: 864.0
+- **verdict at one centre: ESTIMABLE**
 
 **C7 — Histological severity / crypt-apoptosis grade from the biopsy itself**
 
@@ -294,8 +294,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out; central read
 - readiness: R3 · tier needed: D
 - assumed prevalence: 0.3 · target AUROC: 0.8 · achievable (notebook 3.2): n/a
-- n accessible (est.): 500 · n to develop (50-param): 1715.0 · n to show +0.03: 744.0
-- **verdict: UNDER-POWERED**
+- eligible patients at one centre: 84 · n for a 10-parameter head: 343.0 · n to show +0.03: 744.0
+- **verdict at one centre: OUT OF REACH**
 
 **C8 — Organ-involvement multi-label at onset (skin/upper GI/lower GI/liver)**
 
@@ -307,8 +307,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out
 - readiness: R1 · tier needed: A+B
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 8,000 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 750 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 ### Family D response
 
@@ -322,8 +322,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out
 - readiness: R2 · tier needed: A+B
 - assumed prevalence: 0.4 · target AUROC: 0.7 · achievable (notebook 3.2): 0.66-0.74
-- n accessible (est.): 1,200 · n to develop (50-param): 3594.0 · n to show +0.03: 842.0
-- **verdict: UNDER-POWERED**
+- eligible patients at one centre: 50 · n for a 10-parameter head: 719.0 · n to show +0.03: 842.0
+- **verdict at one centre: OUT OF REACH**
 
 **D2 — Which second-line agent? (policy, validated on REACH-style randomised data where available)**
 
@@ -335,8 +335,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: randomised arms only
 - readiness: R2 · tier needed: A+B
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 400 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 400 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 **D3 — Steroid taper safety: flare within 28 days of a taper step**
 
@@ -348,8 +348,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out
 - readiness: R1 · tier needed: A+B
 - assumed prevalence: 0.2 · target AUROC: 0.7 · achievable (notebook 3.2): 0.64-0.72
-- n accessible (est.): 9,000 · n to develop (50-param): 5450.0 · n to show +0.03: 1262.0
-- **verdict: POWERED**
+- eligible patients at one centre: 375 · n for a 10-parameter head: 1090.0 · n to show +0.03: 1262.0
+- **verdict at one centre: ESTIMABLE**
 
 **D4 — Infection within 30 days under intensified immunosuppression**
 
@@ -361,8 +361,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out
 - readiness: R1 · tier needed: A+B
 - assumed prevalence: 0.3 · target AUROC: 0.72 · achievable (notebook 3.2): 0.68-0.76
-- n accessible (est.): 20,000 · n to develop (50-param): 3358.0 · n to show +0.03: 925.0
-- **verdict: POWERED**
+- eligible patients at one centre: 375 · n for a 10-parameter head: 672.0 · n to show +0.03: 925.0
+- **verdict at one centre: RUNNABLE**
 
 ### Family E chronic
 
@@ -376,8 +376,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out + temporal
 - readiness: R1 · tier needed: A+B
 - assumed prevalence: 0.3 · target AUROC: 0.68 · achievable (notebook 3.2): 0.65-0.72
-- n accessible (est.): 40,000 · n to develop (50-param): 5105.0 · n to show +0.03: 995.0
-- **verdict: POWERED**
+- eligible patients at one centre: 1,200 · n for a 10-parameter head: 1021.0 · n to show +0.03: 995.0
+- **verdict at one centre: RUNNABLE**
 
 **E2 — Bronchiolitis-obliterans syndrome / FEV1 decline ≥ 10 % by 2 years**
 
@@ -389,8 +389,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out
 - readiness: R1 · tier needed: A+B
 - assumed prevalence: 0.08 · target AUROC: 0.72 · achievable (notebook 3.2): 0.70-0.78
-- n accessible (est.): 12,000 · n to develop (50-param): 9491.0 · n to show +0.03: 2639.0
-- **verdict: POWERED**
+- eligible patients at one centre: 1,200 · n for a 10-parameter head: 1899.0 · n to show +0.03: 2639.0
+- **verdict at one centre: RUNNABLE**
 
 **E3 — 6-month response to cGvHD therapy (NIH response criteria)**
 
@@ -402,8 +402,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out
 - readiness: R2 · tier needed: A+B
 - assumed prevalence: 0.35 · target AUROC: 0.68 · achievable (notebook 3.2): 0.64-0.72
-- n accessible (est.): 3,000 · n to develop (50-param): 4706.0 · n to show +0.03: 918.0
-- **verdict: UNDER-POWERED**
+- eligible patients at one centre: 126 · n for a 10-parameter head: 942.0 · n to show +0.03: 918.0
+- **verdict at one centre: OUT OF REACH**
 
 **E4 — Immunosuppression-free survival at 3 years**
 
@@ -415,8 +415,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out + temporal
 - readiness: R1 · tier needed: A+B
 - assumed prevalence: 0.4 · target AUROC: 0.68 · achievable (notebook 3.2): 0.64-0.72
-- n accessible (est.): 30,000 · n to develop (50-param): 4464.0 · n to show +0.03: 870.0
-- **verdict: POWERED**
+- eligible patients at one centre: 1,125 · n for a 10-parameter head: 893.0 · n to show +0.03: 870.0
+- **verdict at one centre: RUNNABLE**
 
 **E5 — Safe immunosuppression taper: relapse vs flare trade-off**
 
@@ -428,8 +428,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-centre-out; bivariate
 - readiness: R1 · tier needed: A+B
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 20,000 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 1,200 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 ### Family F mechanism
 
@@ -443,8 +443,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-recipient-out
 - readiness: R4 · tier needed: D
 - assumed prevalence: 0.17 · target AUROC: 0.65 · achievable (notebook 3.2): 0.60-0.66
-- n accessible (est.): 80 · n to develop (50-param): 11675.0 · n to show +0.03: 1543.0
-- **verdict: UNDER-POWERED**
+- eligible patients at one centre: 80 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 **F2 — Zero-shot representation quality: biology kept, centre/batch discarded**
 
@@ -456,8 +456,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: no head trained
 - readiness: R4 · tier needed: C+D
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 1,000 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 80 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 **F3 — Counterfactual direction under JAK inhibition in primary T cells**
 
@@ -469,8 +469,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: held-out perturbations
 - readiness: R4 · tier needed: D
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 40 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 40 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 ### Family G robustness
 
@@ -484,8 +484,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: temporal
 - readiness: R1 · tier needed: as parent
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 120,000 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 1,500 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 **G2 — Leave-centre-out and leave-registry-out transfer (CIBMTR → EBMT)**
 
@@ -497,8 +497,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: leave-registry-out
 - readiness: R1 · tier needed: as parent
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 120,000 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 1,500 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 **G3 — Subgroup equity: paediatric vs adult, donor type, race/ethnicity, centre volume**
 
@@ -510,21 +510,21 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: subgroup within parent split
 - readiness: R1 · tier needed: as parent
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 120,000 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 1,500 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 **G4 — Tier ablation: A only → A+B → A+B+C → A+B+C+D**
 
 - landmark: as parent · horizon: as parent
 - inputs allowed: tiers progressively · outcome: as parent
 - competing events: —
-- primary metric: ΔAUROC per added tier, with cost per patient
+- primary metric: ΔAUROC per added tier, with the data elements each tier adds per patient
 - must beat: Tier A model
 - split protocol: nested tiers, same patients
 - readiness: R2 · tier needed: A->D
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 2,500 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 420 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 **G5 — Missingness robustness: performance when a modality or a lab stream is absent at inference**
 
@@ -536,8 +536,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: simulated + natural missingness
 - readiness: R1 · tier needed: as parent
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 120,000 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 1,500 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 **G6 — Target-trial emulation: reproduce a published randomised effect (BMT CTN 1703: PTCy/Tac/MMF vs Tac/MTX, GRFS HR 0.64, 95% CI 0.49–0.83 ✓) from registry data**
 
@@ -549,8 +549,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: registry vs trial effect (BMT CTN 1703)
 - readiness: R1 · tier needed: A
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 8,000 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 1,275 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 **G7 — Negative-control suite: every submission is also run on permuted outcomes (within centre) and on a negative-control exposure (e.g. donor birth month)**
 
@@ -562,8 +562,8 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 - split protocol: permutation + negative exposure
 - readiness: R1 · tier needed: as parent
 - assumed prevalence: nan · target AUROC: nan · achievable (notebook 3.2): n/a
-- n accessible (est.): 120,000 · n to develop (50-param): nan · n to show +0.03: nan
-- **verdict: -**
+- eligible patients at one centre: 1,500 · n for a 10-parameter head: nan · n to show +0.03: nan
+- **verdict at one centre: -**
 
 ## 4 Metrics
 
@@ -614,7 +614,7 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
 ```json
 {
   "version": "ALLO-FM v1",
-  "primary_task": "B1 \u2014 grade II\u2013IV aGvHD by day +100 from the day +7 draw (issued day +9), leave-centre-out across >= 20 centres",
+  "primary_task": "B1 \u2014 grade II\u2013IV aGvHD by day +100 from the day +7 draw (issued day +9); Level 2: leave-centre-out across >= 20 centres; Level 1C: temporal split at one institution",
   "primary_metric": "IPCW time-dependent AUROC at day 100, competing risks = death and relapse",
   "baselines_to_beat": [
     "MAGIC MAP (ST2+REG3a day-7 algorithm) + clinical covariates",
@@ -632,6 +632,25 @@ Full machine-readable definitions: `task_registry.csv` (all fields) and `task_ca
     "beats_no_pretraining": true,
     "bh_across_family": true,
     "rationale": "interval method, margin and centre count are fixed by the operating characteristics computed in section 8.12"
+  },
+  "level1c_single_centre": {
+    "applies_to": "one institution; no out-of-centre claim",
+    "split": "temporal: earliest 60 % of transplants for development, latest 40 % for test (600 test patients at 1,500)",
+    "interval": "paired DeLong 95 % interval of the AUROC difference on the temporal test set",
+    "ci_lower_bound_min": 0.01,
+    "designed_for_gain": 0.05,
+    "min_test_patients": 600,
+    "must_beat": [
+      "tuned simple model (L0)",
+      "random-weight twin",
+      "no-pretraining"
+    ],
+    "max_head_parameters": "from the Riley criteria for the development set (about 14 at 900 patients, AUROC 0.72, prevalence 0.35)",
+    "claims_not_allowed": [
+      "generalisation to other centres",
+      "subgroup equity",
+      "a gain smaller than +0.03"
+    ]
   },
   "level3_additional": {
     "calibration_slope": [
