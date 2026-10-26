@@ -10,23 +10,38 @@
     "sha256": "395de56cb863cc2a"
   },
   "task_registry.csv": {
-    "description": "38 benchmark tasks, full fields",
-    "bytes": 11515,
-    "sha256": "022f9a98bd28ae7c"
+    "description": "40 benchmark tasks, full fields",
+    "bytes": 12541,
+    "sha256": "da0daaffe58e5d94"
   },
   "task_cards.csv": {
     "description": "readiness, accessible n, requirements, powered verdict",
-    "bytes": 2687,
-    "sha256": "13ce6a00c31ec24a"
+    "bytes": 2805,
+    "sha256": "95b48100b11735e3"
   },
   "GVHD_BENCH_v1.0.md": {
     "description": "standalone benchmark specification",
-    "bytes": 29027,
-    "sha256": "f14c909f69a16f7d"
+    "bytes": 32501,
+    "sha256": "6d01f2450fc04479"
   },
   "gate.json": {
     "description": "pre-stated gate for the ALLO-FM v1 attempt",
-    "bytes": 1273,
-    "sha256": "aa961140815e87ea"
+    "bytes": 1552,
+    "sha256": "8daa2d82ea1fe044"
+  },
+  "DATA_REQUIREMENTS_v1.0.md": {
+    "description": "standalone data-requirement specification: what to collect, how much, how often",
+    "bytes": 10991,
+    "sha256": "b9ef6e6282722b24"
+  },
+  "data_requirements.csv": {
+    "description": "18 rows: layer x package, patients, centres, specimens, cost",
+    "bytes": 2901,
+    "sha256": "fe4f343ce665c10e"
+  },
+  "programme_cost.csv": {
+    "description": "programme cost by package",
+    "bytes": 291,
+    "sha256": "1a93c2d45952cd57"
   }
 }

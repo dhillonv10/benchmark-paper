@@ -27,6 +27,8 @@ md(r"""
 
 **Landmark eligibility, applied per task.** A patient enters a task at landmark *L* only if they are alive, in follow-up and **have not already had the outcome event** at *L*. Patients who died, relapsed or were censored before *L* are excluded from that task and counted in its attrition table. For response tasks the clock starts at treatment initiation, not at day 0.
 
+**Landmarks are issue days, not draw days.** A prediction is *issued* on the landmark day and may use a specimen only once its result exists: a day-7 plasma draw with a 48-hour assay turnaround supports a prediction issued on **day +9**, a sequenced sample a week or more later (§4.7, Figure 5). Task cards therefore state the issue day, and the audit tests `t_known ≤ L` against it.
+
 **Competing events.** Death and relapse are competing events for every GvHD endpoint, never censoring. Cumulative incidence uses Aalen–Johansen; discrimination uses inverse-probability-of-censoring weighting (§8.4).
 
 **Mandatory attrition reporting.** Every task reports: patients in cohort → meeting landmark eligibility → with the required input tier → with a non-missing outcome, with the count lost at each step. A benchmark that cannot show its attrition cannot be audited.
@@ -84,11 +86,11 @@ TASKS = [
 ('A5','A pre-HCT','Non-relapse mortality at 1 year','day −7','1 year','A','death without relapse','relapse','IPCW td-AUROC, Aalen–Johansen calibration','HCT-CI + age + DRI',.18,.70),
 ('A6','A pre-HCT','Donor ranking: order candidate donors by predicted GRFS','donor search','1 year','A + D06 immunogenetics','counterfactual GRFS per donor','—','pairwise concordance among realised choices; policy value','current algorithm (match grade → age → CMV → sex)',None,None),
 ('A7','A pre-HCT','Prophylaxis-platform benefit (PtCy/Tac/MMF vs Tac/MTX) for this pair','day −3','1 year','A','GRFS; grade III–IV aGvHD','death, relapse','calibration of predicted arm difference within RANDOMISED arms (BMT CTN 1703)','no-effect-modification (constant ATE) model',None,None),
-('B1','B early','Grade II–IV aGvHD by day +100 from the day +7 state','day +7','day +100','A,B (+C biomarkers)','MAGIC grade ≥ II','death, relapse','IPCW td-AUROC; net benefit at 10–40 %','**MAP (ST2+REG3α day-7 algorithm)** + clinical',.35,.72),
-('B2','B early','Severe (grade III–IV) aGvHD by day +100 from day +14','day +14','day +100','A,B,C','MAGIC grade ≥ III','death, relapse','IPCW td-AUROC, AUPRC','MAP + clinical',.13,.75),
+('B1','B early','Grade II–IV aGvHD by day +100 from the day +7 state','day +9 (day-7 draw, resulted)','day +100','A,B (+C biomarkers)','MAGIC grade ≥ II','death, relapse','IPCW td-AUROC; net benefit at 10–40 %','**MAP (ST2+REG3α day-7 algorithm)** + clinical',.35,.72),
+('B2','B early','Severe (grade III–IV) aGvHD by day +100 from day +14','day +16 (day-14 draw, resulted)','day +100','A,B,C','MAGIC grade ≥ III','death, relapse','IPCW td-AUROC, AUPRC','MAP + clinical',.13,.75),
 ('B3','B early','7-day-ahead rolling onset alarm (continuous early warning)','every day, +7 to +60','7 days','A,B (+C,D)','first day of grade ≥ II within 7 d','death, relapse, discharge','AUROC per alarm-day; alerts per 100 patient-days at 50 % sensitivity','clinician-trigger proxy (CRP + stool volume thresholds)',.04,.75),
-('B4','B early','Lower-GI aGvHD specifically by day +100 from day +14','day +14','day +100','A,B,C,D','lower-GI stage ≥ 1','death, relapse','IPCW td-AUROC','REG3α + clinical',.22,.72),
-('B5','B early','NRM at 1 year from day +7','day +7','1 year','A,B,C','death without relapse','relapse','IPCW td-AUROC, calibration','MAP (its validated use) + HCT-CI',.18,.75),
+('B4','B early','Lower-GI aGvHD specifically by day +100 from day +14','day +16 (day-14 draw, resulted)','day +100','A,B,C,D','lower-GI stage ≥ 1','death, relapse','IPCW td-AUROC','REG3α + clinical',.22,.72),
+('B5','B early','NRM at 1 year from day +7','day +9 (day-7 draw, resulted)','1 year','A,B,C','death without relapse','relapse','IPCW td-AUROC, calibration','MAP (its validated use) + HCT-CI',.18,.75),
 ('B6','B early','Relapse by 1 year from day +30 (GvL trade-off partner)','day +30','1 year','A,B (+C chimerism/MRD)','relapse/progression','death','IPCW td-AUROC','DRI + day-30 MRD + chimerism',.24,.72),
 ('C1','C diagnosis & acute course','Differential diagnosis of early post-HCT diarrhoea: GvHD vs infection vs drug/other','day of symptom onset','7 days (adjudicated)','A,B (+C,D; biopsy-independent)','adjudicated cause (biopsy + microbiology + course)','—(multiclass)','macro-AUROC; GvHD-vs-rest AUPRC','clinical gestalt proxy: stool PCR + timing + CRP',.45,.80),
 ('C2','C diagnosis & acute course','Is this rash GvHD, drug eruption, or engraftment syndrome?','day of rash','7 days','A,B (+D photo/WSI)','adjudicated cause','—','macro-AUROC','timing + eosinophils + drug-start model',.5,.75),
@@ -115,6 +117,8 @@ TASKS = [
 ('G3','G robustness','Subgroup equity: paediatric vs adult, donor type, race/ethnicity, centre volume','as parent','as parent','as parent','as parent','—','worst-subgroup AUROC and calibration; equal-opportunity gap','overall model',None,None),
 ('G4','G robustness','Tier ablation: A only → A+B → A+B+C → A+B+C+D','as parent','as parent','progressively','as parent','—','ΔAUROC per added tier, with cost per patient','Tier A model',None,None),
 ('G5','G robustness','Missingness robustness: performance when a modality or a lab stream is absent at inference','as parent','as parent','as parent','as parent','—','AUROC under simulated and natural missingness','complete-case model',None,None),
+('G6','G robustness','Target-trial emulation: reproduce a published randomised effect (BMT CTN 1703: PTCy/Tac/MMF vs Tac/MTX, GRFS HR 0.64, 95% CI 0.49–0.83 ✓) from registry data','trial eligibility + randomisation-equivalent day','1 year','A (trial-eligibility variables) + model-based adjustment','GRFS (§4.6)','death, relapse (composite)','|log HR(emulated) − log HR(trial)| and coverage of the trial interval by the emulation interval','unadjusted registry comparison; propensity-weighted tuned-tree adjustment',None,None),
+('G7','G robustness','Negative-control suite: every submission is also run on permuted outcomes (within centre) and on a negative-control exposure (e.g. donor birth month)','as parent','as parent','as parent','permuted / null outcome','—','false-pass rate across the whole suite; must not exceed the nominal level','—',None,None),
 ]
 COLS = ['id','family','task','landmark','horizon','inputs allowed (tiers)','outcome (label fn)','competing events',
         'primary metric','clinical baseline to beat','assumed prevalence','target AUROC']
@@ -173,21 +177,9 @@ CARDS = {
  'F3': ('R4', 'D', 40, 'held-out perturbations', (None, None)),
  'G1': ('R1', 'as parent', 120000, 'temporal', (None, None)), 'G2': ('R1', 'as parent', 120000, 'leave-registry-out', (None, None)),
  'G3': ('R1', 'as parent', 120000, 'subgroup within parent split', (None, None)), 'G4': ('R2', 'A->D', 2500, 'nested tiers, same patients', (None, None)),
+ 'G6': ('R1', 'A', 8000, 'registry vs trial effect (BMT CTN 1703)', (None, None)), 'G7': ('R1', 'as parent', 120000, 'permutation + negative exposure', (None, None)),
  'G5': ('R1', 'as parent', 120000, 'simulated + natural missingness', (None, None)),
 }
-def hm_se_local(A, n1, n0):
-    Q1, Q2 = A / (2 - A), 2 * A * A / (1 + A)
-    return math.sqrt((A * (1 - A) + (n1 - 1) * (Q1 - A * A) + (n0 - 1) * (Q2 - A * A)) / (n1 * n0))
-
-def n_for_delta(auroc_base, delta, prev, rho=.85, power=.8, alpha=.05):
-    """Approximate n for 80% power on a paired comparison of two correlated AUROCs
-    (score correlation rho); cross-checked against the DeLong simulation in section 9."""
-    need = norm.ppf(1 - alpha / 2) + norm.ppf(power)
-    for n in range(100, 80001, 50):
-        se_d = math.sqrt(2 * (1 - rho)) * hm_se_local(auroc_base, max(int(n * prev), 2), max(int(n * (1 - prev)), 2))
-        if delta / max(se_d, 1e-12) >= need: return n
-    return None
-
 card_rows = []
 for _, r in reg.iterrows():
     rd, tier, n_acc, split, ach = CARDS[r.id]
@@ -233,6 +225,8 @@ md(r'''
 | **Tuned simple model** | penalised logistic / Cox or gradient-boosted trees on the 20–40 registry variables, with the same splits | The published audits of foundation models repeatedly found simple models competitive; trees on tabular registry data are strong |
 | **Confounder-only** | centre, era, assay batch, library size, pre-analytics, sampling day | If this matches the model, the signal is technical |
 | **Treatment-proxy-only** | the banned features, run deliberately as a *leakage canary* | Quantifies how much a leaking pipeline would have "gained" |
+| **Presence-only** | indicators of *whether and when* each lab, drug or assay was recorded, with no values | In health records the act of ordering a test carries clinical suspicion; a model that approaches the full model on presence alone has learned practice, not biology (§8.12) |
+| **Permuted-outcome and negative-exposure controls** (task G7) | the same pipeline run on outcomes shuffled within centre, and on a negative-control exposure | Measures the false-pass rate of the whole pipeline, not just of one metric (§8.12) |
 | **Random-weight twin** | identical architecture, untrained weights, same adapters | Isolates what pretraining contributed |
 | **No-pretraining** | stage 3 only, same labels | Isolates what pretraining contributed, the other way |
 
@@ -344,7 +338,7 @@ md(r'''
 3. **Temporal**: train on transplants up to year *k*, test on year *k*+1 onward. Mandatory for deployment claims, since practice shifts (letermovir, PtCy expansion, ruxolitinib).
 4. **Grouped random split**: reported as an upper bound and labelled as such.
 
-**Audit checks run before any number is reported** (implemented below): patient overlap between folds; donor shared across split sides; centre bleeding into both sides for a leave-centre-out claim; any feature whose `t_known` exceeds the landmark; any banned treatment-proxy feature present; label-vs-centre association strong enough that a centre-only model scores well; and duplicate patient records across sources.
+**Audit checks run before any number is reported** (implemented below): patient overlap between folds; donor shared across split sides; centre bleeding into both sides for a leave-centre-out claim; any feature whose `t_known` exceeds the landmark; any banned treatment-proxy feature present; a single feature whose univariate AUROC is implausibly high for the landmark; label-vs-centre association strong enough that a centre-only model scores well; a presence-only model that beats chance by more than 0.02; and duplicate patient records across sources.
 
 ## 8.8 Mandatory ablations
 | Ablation | Question it answers |
@@ -356,6 +350,8 @@ md(r'''
 | tier ablation A → A+B → A+B+C → A+B+C+D (task G4) | what does each extra data tier buy, per patient cost? |
 | pretraining-corpus scaling (10 / 30 / 100 %) | is scale binding, or does it plateau as in the published scaling study? |
 | shared-structure audit (centre decodability, subspace overlap) | **premise P3**: measure ρ before blaming the model |
+| values-masked (every measured value replaced by its training mean, presence kept) | how much of the gain is *what was ordered* rather than *what it showed* (§8.12) |
+| prediction-issue-day sweep (issue on day +9, +11, +14, with the matching inputs) | does the claimed gain survive the assay turnaround that real use imposes (§4.7) |
 
 ''')
 
@@ -467,7 +463,7 @@ fig.legend([plt.Line2D([], [], marker=m, ls='none', ms=4.6, mfc=PAL['ink2'], mec
             'powered', 'under-powered', 'not a single-AUROC task'], ncol=4, loc='lower center', bbox_to_anchor=(.5, 0.0),
            columnspacing=1.5, handletextpad=.3, labelspacing=.45)
 finish(fig, 7, 'gvhd_bench_structure',
-       'GvHD-Bench v1.0. (a) The 38 tasks, grouped by family and by the landmark at which the prediction is made. Marker '
+       'GvHD-Bench v1.0. (a) The 40 tasks, grouped by family and by the landmark at which the prediction is made. Marker '
        'shape is data readiness and colour is the powered verdict; tasks that are not a single-AUROC comparison (donor ranking, '
        'counterfactual contrasts, representation and robustness audits) are grey. (b) For the 26 tasks with a numeric '
        'requirement: patients accessible divided by patients needed to demonstrate a +0.03 AUROC gain over the task '
@@ -481,28 +477,35 @@ md(r'''
 |---|---|---|
 | **0** | nothing | — |
 | **1** | "more label-efficient than a tuned simple model" | equal or better at full labels, **and** better at k ≤ 100 labelled patients, paired across centres; beats its random-weight twin |
-| **2** | "better discrimination out-of-centre" | ΔIPCW-td-AUROC ≥ +0.03 vs the best simple model **and** vs the clinical baseline; bootstrap CI over centres excludes 0; improves in ≥ 70 % of held-out centres; survives BH correction across the task family; beats random-weight twin and no-pretraining |
+| **2** | "better discrimination out-of-centre" | ≥ 20 held-out centres; the **centre-level 95 % t-interval** of ΔIPCW-td-AUROC against the best simple model **and** against the clinical baseline has a **lower bound ≥ +0.01** (the design is powered for a true gain of +0.03; §8.12); improves in ≥ 70 % of held-out centres; survives BH correction across the task family; beats random-weight twin and no-pretraining |
 | **3** | "clinically useful" | Level 2 **plus** calibration slope within 0.8–1.25 and positive net benefit across 10–40 % thresholds in leave-centre-out **and** temporal validation, at n ≥ the Riley minimum, with a prospective silent-mode evaluation and a decision-impact plan |
 | **4** | "improves outcomes" | a prospective trial of the model-guided decision. Nothing short of this licenses the word *improves* |
 
-**Pre-registration rule.** Gate thresholds, splits, seeds and the primary task are written to `spec/gate.json` before any model is run, and the file hash is reported with the results. The gate below is the one this specification proposes for the ALLO-FM v1 attempt.
+**Pre-registration rule.** Gate thresholds, splits, seeds and the primary task are written to `spec/gate.json` before any model is run, and the file hash is reported with the results. The gate below is the one this specification proposes for the ALLO-FM v1 attempt. Its interval method, margin and minimum centre count are not arbitrary: §8.12 simulates the gate and shows that the obvious alternative (a point estimate of +0.03 and a percentile-bootstrap interval) passes a model whose true gain equals the threshold only about half the time and under-covers when centres are few.
 ''')
 
 code(r'''
 # ----------------------------------------------------------------------------- the pre-stated gate for the ALLO-FM v1 attempt (written to spec/gate.json)
 GATE = dict(
   version='ALLO-FM v1',
-  primary_task='B1 — grade II–IV aGvHD by day +100 from the day +7 state, leave-centre-out across >= 20 centres',
+  primary_task='B1 — grade II–IV aGvHD by day +100 from the day +7 draw (issued day +9), leave-centre-out across >= 20 centres',
   primary_metric='IPCW time-dependent AUROC at day 100, competing risks = death and relapse',
   baselines_to_beat=['MAGIC MAP (ST2+REG3a day-7 algorithm) + clinical covariates',
                      'gradient-boosted trees on 20-40 registry variables (tuned, same splits)',
                      'random-weight twin of the backbone', 'no-pretraining (supervised only)'],
-  level2_gate=dict(delta_auroc_min=0.03, ci_over_centres_excludes_zero=True, fraction_centres_improved_min=0.70,
-                   beats_random_twin=True, beats_no_pretraining=True, bh_across_family=True),
+  level2_gate=dict(delta_auroc_designed_for=0.03, ci_method='centre-level t-interval, K-1 d.f. (not a percentile bootstrap)',
+                   ci_lower_bound_min=0.01, fraction_centres_improved_min=0.70, min_centres=20,
+                   beats_random_twin=True, beats_no_pretraining=True, bh_across_family=True,
+                   rationale='interval method, margin and centre count are fixed by the operating characteristics computed in section 8.12'),
   level3_additional=dict(calibration_slope=[0.8, 1.25], net_benefit_positive_thresholds=[0.10, 0.40],
-                         temporal_validation_required=True, min_n='computed per task by riley_n(P, target AUROC, prevalence)'),
+                         temporal_validation_required=True, min_n='computed per task by riley_n(P, target AUROC, prevalence) and validation_n (section 9.7)'),
   stopping_rule='if Level 1 is not reached on B1 at stage-1 scale, publish the negative result and do not proceed to stage 3',
-  frozen=dict(seed=SEED, splits='spec/splits_*.json', label_functions='section 3.6 of this notebook'))
+  frozen=dict(seed=SEED, splits='spec/splits_*.json', label_functions='section 4.6 of this notebook'))
+def level2_verdict(lo, frac, K):
+    """Apply the Level-2 gate to a centre-level interval lower bound, fraction of centres improved, and centre count."""
+    g = GATE['level2_gate']
+    if K < g['min_centres']: return f'not evaluable (K={K} < {g["min_centres"]})'
+    return 'PASS' if (lo >= g['ci_lower_bound_min'] and frac >= g['fraction_centres_improved_min']) else 'fail'
 json.dump(GATE, open(os.path.join(SPEC_DIR, 'gate.json'), 'w'), indent=2)
 import hashlib
 h = hashlib.sha256(open(os.path.join(SPEC_DIR, 'gate.json'), 'rb').read()).hexdigest()[:16]
@@ -520,8 +523,9 @@ This demonstrates the machinery and the audit. **It is not evidence about patien
 
 code(r'''
 # ----------------------------------------------------------------------------- [SIM] multi-centre registry-like cohort generator
-def simulate_cohort(n=6000, n_centres=24, seed=3, leak=True):
+def simulate_cohort(n=6000, n_centres=24, seed=3, leak=True, drift=0.0, presence_gamma=0.0):
     r = np.random.default_rng(seed)
+    era = np.random.default_rng(seed + 1).integers(2014, 2024, n)       # own stream: adding drift leaves every other column unchanged
     centre = r.integers(0, n_centres, n)
     c_off = r.normal(0, .35, n_centres)                                  # centre-level risk offset (case mix + practice)
     c_ptcy = r.beta(2, 2, n_centres)                                     # centre-level PtCy adoption rate
@@ -537,14 +541,16 @@ def simulate_cohort(n=6000, n_centres=24, seed=3, leak=True):
     cd34 = np.clip(r.normal(6.2, 2.1, n), 1, 15)
     # day-7 state (Tier B/C): CRP, ALC, tacrolimus trough, and the MAGIC-like biomarker (measured in 55%)
     base = (-1.15 + .55 * hla_mm + .30 * fem_to_male + .22 * mac + .10 * (source == 'PBSC')
-            + .11 * dri * .3 + .018 * (age - 52) / 10 - .62 * ptcy - .25 * atg + c_off[centre])
+            + .11 * dri * .3 + .018 * (age - 52) / 10 - .62 * ptcy - .25 * atg + c_off[centre] + drift * (era - 2014))
     lat = base + r.normal(0, .55, n)                                      # latent alloreactivity
     crp7 = np.exp(np.clip(1.9 + .55 * lat + r.normal(0, .55, n), -2, 6))
     alc7 = np.exp(np.clip(-1.4 - .25 * lat + r.normal(0, .5, n), -5, 3))
     tac7 = np.clip(r.normal(9.5 - .6 * lat, 2.6, n), 1, 22)
     st2 = np.exp(np.clip(3.3 + .62 * lat + r.normal(0, .5, n), 0, 9))
     reg3a = np.exp(np.clip(3.0 + .70 * lat + r.normal(0, .6, n), 0, 9))
-    measured = r.random(n) < .55
+    u_meas = r.random(n)
+    zl = (lat - lat.mean()) / lat.std()          # presence_gamma > 0: clinicians order the biomarker more often when they suspect GvHD
+    measured = u_meas < 1 / (1 + np.exp(-(math.log(.55 / .45) + presence_gamma * zl)))
     p_ag = 1 / (1 + np.exp(-(lat + .45 * np.log(st2 / 27) + .40 * np.log(reg3a / 20) - .15)))
     agvhd = (r.random(n) < p_ag).astype(int)
     t_ag = np.clip(r.gamma(3.2, 9, n) + 10, 8, 170)
@@ -556,26 +562,40 @@ def simulate_cohort(n=6000, n_centres=24, seed=3, leak=True):
     cause = np.where(which == 0, 1, np.where(which == 1, 2, np.where(which == 2, 3, 0)))   # 1 aGvHD, 2 relapse, 3 NRM, 0 censored
     # the planted leak: an "early steroid order" recorded at day +5 that is really driven by the outcome
     steroid_d5 = ((cause == 1) & (time <= 100)).astype(int) * (r.random(n) < .8) + (r.random(n) < .03)
-    df = pd.DataFrame(dict(pid=np.arange(n), centre=centre, era=r.integers(2014, 2024, n), age=age, donor_type=donor_type,
+    df = pd.DataFrame(dict(pid=np.arange(n), centre=centre, era=era, age=age, donor_type=donor_type,
                            hla_mm=hla_mm, source=source, fem_to_male=fem_to_male, hctci=hctci, dri=dri, mac=mac,
                            ptcy=ptcy, atg=atg, cd34=cd34, crp7=crp7, alc7=alc7, tac7=tac7,
                            st2=np.where(measured, st2, np.nan), reg3a=np.where(measured, reg3a, np.nan),
-                           biomarker_measured=measured.astype(int), time=time, cause=cause))
+                           biomarker_measured=measured.astype(int), time=time, cause=cause,
+                           _latent_event=((agvhd == 1) & (t_ag <= 100)).astype(int)))   # oracle column for planted-effect tests; never a feature
     if leak: df['steroid_order_d5'] = steroid_d5.astype(int)
     return df
 
-COH = simulate_cohort()
+LANDMARK = 9                                            # task B1: day-7 draw, 48-hour turnaround, prediction issued on day +9
+COH_ALL = simulate_cohort()
+keep_ = (COH_ALL.time > LANDMARK).values
+attr = pd.DataFrame([
+    ('patients in the cohort (day 0 recorded)', len(COH_ALL)),
+    (f'  died without relapse before day +{LANDMARK}', int(((COH_ALL.cause == 3) & ~keep_).sum())),
+    (f'  relapsed before day +{LANDMARK}', int(((COH_ALL.cause == 2) & ~keep_).sum())),
+    (f'  censored before day +{LANDMARK}', int(((COH_ALL.cause == 0) & ~keep_).sum())),
+    (f'  already had grade II-IV aGvHD before day +{LANDMARK}', int(((COH_ALL.cause == 1) & ~keep_).sum())),
+    ('meeting landmark eligibility (analysed)', int(keep_.sum())),
+    ('  of whom with the day-7 biomarker panel', int(COH_ALL.loc[keep_, 'biomarker_measured'].sum()))], columns=['attrition step', 'patients'])
+print('MANDATORY ATTRITION TABLE (§8.1):'); display(md_table(attr))
+COH = COH_ALL[keep_].reset_index(drop=True)
 inc100 = aalen_johansen(COH.time.values, COH.cause.values, 100, 1)
 print(f'[SIM] cohort: {len(COH)} patients, {COH.centre.nunique()} centres | '
-      f'Aalen-Johansen incidence of grade II-IV aGvHD by d+100 = {inc100:.3f}')
+      f'Aalen-Johansen incidence of grade II-IV aGvHD by d+100, given alive and event-free at the landmark = {inc100:.3f}')
 print('cause distribution (0 censored, 1 aGvHD, 2 relapse, 3 NRM):', dict(COH.cause.value_counts().sort_index()))
 display(md_table(COH.groupby(COH.centre).agg(n=('pid', 'count'), ptcy_rate=('ptcy', 'mean'),
         aGvHD_by_d100=('cause', lambda s: float(((COH.loc[s.index, 'cause'] == 1) & (COH.loc[s.index, 'time'] <= 100)).mean()))).round(3).head(8), index=True))
 ''')
 
 code(r'''
-# ----------------------------------------------------------------------------- the leakage audit, as code (run on the [SIM] cohort for task B1, landmark day +7)
+# ----------------------------------------------------------------------------- the leakage audit, as code (run on the [SIM] cohort for task B1, issued on day +9)
 BANNED_PREFIXES = ('steroid', 'ruxolitinib', 'ecp_', 'budesonide', 'biopsy_order', 'infliximab')
+PLAUSIBLE_SINGLE_FEATURE_AUROC = .80      # no single day-7 variable has been reported to discriminate aGvHD better than ~0.75; above 0.80 is a red flag
 def leakage_audit(df, feature_cols, landmark, t_known_map, group_col='pid', centre_col='centre',
                   outcome=lambda d: ((d.cause == 1) & (d.time <= 100)).astype(int), folds=None):
     """Runs the §4.7 checks and returns a findings table. t_known_map: {feature: day the value becomes known}."""
@@ -597,19 +617,19 @@ def leakage_audit(df, feature_cols, landmark, t_known_map, group_col='pid', cent
                     status='WARN' if a_centre > .6 else 'pass'))
     for c in [c for c in feature_cols if c in df.columns and df[c].notna().sum() > 50 and np.issubdtype(df[c].dtype, np.number)]:
         a = auroc(y[df[c].notna().values], df[c].dropna().values)
-        if a == a and (a > .9 or a < .1):
+        if a == a and (a > PLAUSIBLE_SINGLE_FEATURE_AUROC or a < 1 - PLAUSIBLE_SINGLE_FEATURE_AUROC):
             out.append(dict(check=f'single feature with implausible AUROC: {c}', finding=f'{a:.3f}', status='FAIL'))
     return pd.DataFrame(out)
 
 CLIN = ['age', 'hla_mm', 'fem_to_male', 'hctci', 'dri', 'mac', 'ptcy', 'atg', 'cd34']
 D7 = ['crp7', 'alc7', 'tac7']
 BIO = ['st2', 'reg3a']
-T_KNOWN = {**{c: -7 for c in CLIN}, **{c: 7 for c in D7}, 'st2': 9, 'reg3a': 9, 'steroid_order_d5': 5, 'biomarker_measured': 7}
-audit_bad = leakage_audit(COH, CLIN + D7 + BIO + ['steroid_order_d5'], landmark=7, t_known_map=T_KNOWN)
-print('AUDIT — candidate input set that includes the planted leak and a late-resulting assay:')
+T_KNOWN = {**{c: -7 for c in CLIN}, **{c: 7 for c in D7}, 'st2': 9, 'reg3a': 9, 'steroid_order_d5': 5, 'biomarker_measured': 9}
+audit_bad = leakage_audit(COH, CLIN + D7 + BIO + ['biomarker_measured', 'steroid_order_d5'], landmark=LANDMARK, t_known_map=T_KNOWN)
+print('AUDIT — candidate input set that includes the planted leak:')
 display(md_table(audit_bad))
-audit_good = leakage_audit(COH, CLIN + D7, landmark=7, t_known_map=T_KNOWN)
-print('AUDIT — the cleaned input set actually used for B1 (day +7 landmark):')
+audit_good = leakage_audit(COH, CLIN + D7 + BIO + ['biomarker_measured'], landmark=LANDMARK, t_known_map=T_KNOWN)
+print('AUDIT — the cleaned input set actually used for B1 (prediction issued on day +9):')
 display(md_table(audit_good))
 ''')
 
@@ -653,15 +673,23 @@ summ = LCO.groupby('arm').agg(centres=('centre', 'count'), mean_ipcw_auroc=('ipc
                               max_centre=('ipcw_auroc', 'max'), mean_brier=('brier', 'mean')).round(3)
 summ = summ.reindex(list(ARMS)); display(md_table(summ, index=True))
 
+from scipy.stats import t as student_t
+def centre_interval(d, level=.95):
+    """Centre-level t-interval for the mean paired difference across K held-out centres (K-1 d.f.): the gate's interval."""
+    d = np.asarray(d, float); K = len(d); m = d.mean(); se = d.std(ddof=1) / math.sqrt(K); q = student_t.ppf(1 - (1 - level) / 2, K - 1)
+    return float(m), float(m - q * se), float(m + q * se)
 def boot_delta(a, b, n=4000, seed=0):
+    """Percentile bootstrap over centres, kept for comparison: section 8.12 shows it under-covers when centres are few."""
     d = np.asarray(a) - np.asarray(b); r = np.random.default_rng(seed)
     bs = np.array([d[r.integers(0, len(d), len(d))].mean() for _ in range(n)])
-    return float(d.mean()), float(np.quantile(bs, .025)), float(np.quantile(bs, .975))
+    return float(np.quantile(bs, .025)), float(np.quantile(bs, .975))
 piv = LCO.pivot_table(index='centre', columns='arm', values='ipcw_auroc')
 base = 'clinical baseline (registry covariates)'
-delta = pd.DataFrame([dict(arm=a, **dict(zip(['delta_vs_clinical', 'lo', 'hi'], boot_delta(piv[a], piv[base]))),
-                           centres_improved=f"{int((piv[a] > piv[base]).sum())}/{len(piv)}")
-                      for a in piv.columns if a != base]).round(3)
+def _row(a):
+    m, lo, hi = centre_interval(piv[a].values - piv[base].values); bl, bh = boot_delta(piv[a], piv[base]); frac = float((piv[a] > piv[base]).mean())
+    return dict(arm=a, delta_vs_clinical=m, lo=lo, hi=hi, boot_lo=bl, boot_hi=bh, centres_improved=f"{int((piv[a] > piv[base]).sum())}/{len(piv)}",
+                level2_gate='excluded: leakage audit FAIL' if 'LEAKING' in a else level2_verdict(lo, frac, len(piv)))
+delta = pd.DataFrame([_row(a) for a in piv.columns if a != base]).round(3)
 display(md_table(delta))
 ''')
 
@@ -710,7 +738,7 @@ for y, (a, r) in zip(ypos, dd_.iterrows()):
     c = ARM_STYLE[a][0]; ax.plot([r.lo, r.hi], [y, y], color=c, lw=1.8, solid_capstyle='round'); ax.plot(r.delta_vs_clinical, y, 'o', color=c, ms=4.2, zorder=4)
 ax.axvline(0, color=PAL['ink'], lw=.8)
 ax.set_yticks(ypos); ax.set_yticklabels([ARM_STYLE[a][2] for a in dd_.index]); ax.invert_yaxis(); ax.tick_params(axis='y', length=0)
-ax.set_xlim(-.30, .32); ax.set_xlabel('Δ IPCW td-AUROC vs clinical\n(centre-bootstrap 95% CI)'); panel(ax, 'b')
+ax.set_xlim(-.30, .32); ax.set_xlabel('Δ IPCW td-AUROC vs clinical\n(centre-level 95% t-interval)'); panel(ax, 'b')
 ax = axc; ygrid(ax)                                                    # (c) calibration against Aalen-Johansen
 mx = float(max(cal.predicted.max(), cal.observed_AJ.max())) * 1.12
 ax.plot([0, mx], [0, mx], color=PAL['ink2'], ls='--', lw=.7)
@@ -735,7 +763,7 @@ finish(fig, 8, 'harness_task_B1',
        '[SIM] The GvHD-Bench harness executing task B1 (grade II-IV aGvHD by day +100 from the day +7 state) on a simulated '
        '24-centre cohort. (a) Leave-centre-out IPCW time-dependent AUROC, one point per held-out centre, with the mean '
        'printed above; the pooled mean alone would hide this spread. (b) Difference from the clinical baseline with a '
-       'centre-level bootstrap interval. (c) Calibration against the Aalen-Johansen cumulative incidence, the competing-risk '
+       'centre-level t-interval. (c) Calibration against the Aalen-Johansen cumulative incidence, the competing-risk '
        'analogue of a calibration plot. (d) Decision-curve net benefit. (e) The leakage canary: one planted treatment-proxy '
        'feature inflates the headline number, and the audit flags it before any model is fitted. Effect sizes belong to the simulation.')
 display(md_table(cal.round(3)))
@@ -745,10 +773,12 @@ code(r'''
 g = lambda a: summ.loc[a, 'mean_ipcw_auroc']
 leak_gain = g('LEAKING pipeline (adds steroid order d+5)') - g('full (clinical + day-7 + biomarkers)')
 d_full = delta.set_index('arm').loc['full (clinical + day-7 + biomarkers)']
+fail_rows = audit_bad[audit_bad.status == 'FAIL']; n_fail = len(fail_rows)
+fail_list = '; '.join(f"{r.check}: {r.finding}" for r in fail_rows.itertuples())
 nb_pos = float(nbc.threshold[(nbc.model > nbc.treat_all) & (nbc.model > 0)].min()) if ((nbc.model > nbc.treat_all) & (nbc.model > 0)).any() else float('nan')
-display(Markdown(f"""**Result [SIM].** The harness runs. Mean IPCW td-AUROC over held-out centres: clinical baseline **{g('clinical baseline (registry covariates)'):.3f}**, clinical + MAP-like biomarkers **{g('clinical + MAP-like biomarkers'):.3f}**, clinical + day-7 state **{g('timeline model (clinical + day-7 state)'):.3f}**, full **{g('full (clinical + day-7 + biomarkers)'):.3f}** (Δ vs clinical **{d_full.delta_vs_clinical:+.3f}**, centre-bootstrap CI [{d_full.lo:+.3f}, {d_full.hi:+.3f}], improved in {d_full.centres_improved} centres). Confounder-only (centre + era) reaches **{g('confounder-only (centre + era)'):.3f}**, which is the number any real result must be read against.
+display(Markdown(f"""**Result [SIM].** The harness runs. Mean IPCW td-AUROC over held-out centres: clinical baseline **{g('clinical baseline (registry covariates)'):.3f}**, clinical + MAP-like biomarkers **{g('clinical + MAP-like biomarkers'):.3f}**, clinical + day-7 state **{g('timeline model (clinical + day-7 state)'):.3f}**, full **{g('full (clinical + day-7 + biomarkers)'):.3f}** (Δ vs clinical **{d_full.delta_vs_clinical:+.3f}**, centre-level 95 % t-interval [{d_full.lo:+.3f}, {d_full.hi:+.3f}], improved in {d_full.centres_improved} centres; Level-2 gate: **{d_full.level2_gate}**). Confounder-only (centre + era) reaches **{g('confounder-only (centre + era)'):.3f}**, which is the number any real result must be read against.
 
-**The leakage canary worked.** Adding the planted day +5 steroid order lifts the mean to **{g('LEAKING pipeline (adds steroid order d+5)'):.3f}** ({leak_gain:+.3f}), and the audit flagged it twice before any model was fitted — once as a treatment-proxy feature and once as a single feature with an implausible univariate AUROC. **A gain of this size is exactly what a leaking pipeline produces**, which is why the audit runs first and is reported alongside the result.
+**The leakage canary worked.** Adding the planted day +5 steroid order lifts the mean to **{g('LEAKING pipeline (adds steroid order d+5)'):.3f}** ({leak_gain:+.3f}), and the audit failed that input set on **{n_fail} counts before any model was fitted** ({fail_list}). **A gain of this size is exactly what a leaking pipeline produces**, which is why the audit runs first and is reported alongside the result.
 
 Calibration out-of-centre has slope {slope[0]:.2f} against the Aalen–Johansen incidence, and the decision curve is above both default strategies from a threshold of about {nb_pos:.2f}. All of these numbers are properties of a cohort we generated; their only purpose is to show that the metrics, splits, audit and gate logic execute and behave as specified."""))
 ''')

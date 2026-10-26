@@ -105,7 +105,7 @@ The table below is the paper's commitment. For each task family it states what w
 | **B5/C6** non-relapse mortality | Already the strongest validated biomarker use; a model should match and then add | **0.72–0.80** | Ann Arbor and MAGIC algorithms were derived for exactly this ✓ | *high confidence, incremental* |
 | **C1/C2** differential diagnosis of post-HCT diarrhoea / rash | Genuinely useful and under-served: separating GvHD from infection, drug effect and engraftment syndrome | **0.78–0.88** | the discriminating information (timing, microbiology, histology, tissue expression) is in hand at that moment | *high confidence, high value* |
 | **C7** histological severity from the biopsy | A pathology-adapter task with a clear label; pathology foundation models transfer well across stains and sites | **κ 0.6–0.8** vs central read | pathology FM literature †; our pilot's tissue transcriptome analogue reached LOSO 0.80 | *high confidence* |
-| **C4/C5** steroid refractoriness / day-28 response | Moderate, and worth it: this is the decision that currently has no model at all | **0.68–0.76** | onset grade + organ pattern + MAP is the baseline; our pilot at n = 45 was uninformative (0.56 [0.37, 0.77]) | *plausible, needs ~1,000 treated patients* |
+| **C4/C5** steroid refractoriness / day-28 response | Moderate, and worth it: this is the decision that currently has no model at all | **0.68–0.76** | onset grade + organ pattern + MAP is the baseline; our pilot at n = 45 was uninformative (0.56 [0.37, 0.77]) | *plausible; ~1,000 treated patients to measure it, ~3,400 to develop a model (§8.4)* |
 | **D1/D2** second-line agent response and choice | Not claimable from observational data; specify now, validate inside trials | no claim | confounded by indication; REACH-style randomised data needed | *explicitly deferred* |
 | **E1** NIH moderate/severe cGvHD by 1 year from day +100 | Moderate; chronic GvHD has a long, partly unobserved causal chain of its own | **0.65–0.72** | prior aGvHD + graft source + donor sex clinical models; day-100 biomarker panels † | *modest claim* |
 | **E2** bronchiolitis obliterans | Detection of decline is tractable; prediction of onset is harder | **0.70–0.78** for FEV₁ decline | serial PFT/CT trajectories are strong predictors of their own continuation † | *plausible* |
@@ -130,16 +130,6 @@ This deserves its own answer, because it is the modality most often proposed for
 
 code(r'''
 # ----------------------------------------------------------------------------- what would settle the open transcriptomic questions? (n needed, and what the pilot had)
-def n_for_ci(target_auroc, prev, half_width=.07):
-    """Patients needed so that one AUROC's 95% CI half-width is <= half_width (Hanley-McNeil)."""
-    def hm(A, n1, n0):
-        Q1, Q2 = A / (2 - A), 2 * A * A / (1 + A)
-        return math.sqrt((A * (1 - A) + (n1 - 1) * (Q1 - A * A) + (n0 - 1) * (Q2 - A * A)) / (n1 * n0))
-    for n in range(20, 20001, 10):
-        n1 = max(int(round(n * prev)), 2)
-        if 1.96 * hm(target_auroc, n1, n - n1) <= half_width: return n
-    return None
-
 TX = [  # question, the sample type, what the pilot had, pilot result, assumed prevalence, target AUROC
  ('Confirm GvHD vs no GvHD in tissue', 'GI / skin biopsy', '104 samples, 3 studies', 'LOSO 0.80; zero-parameter score 0.80-0.88', .50, .85),
  ('Differential: GvHD vs infection vs drug', 'GI biopsy + microbiology', 'none (no public adjudicated set)', 'not testable', .45, .85),
@@ -152,10 +142,9 @@ tx = pd.DataFrame(TX, columns=['question', 'sample at diagnosis', 'what public d
                                'prevalence', 'target AUROC'])
 tx['n for ±0.07 CI'] = [n_for_ci(a, p) for a, p in zip(tx['target AUROC'], tx['prevalence'])]
 tx['n for ±0.03 CI'] = [n_for_ci(a, p, .03) for a, p in zip(tx['target AUROC'], tx['prevalence'])]
-tx['n to beat a 0.65 baseline (80% power, paired)'] = [
-    int(np.ceil(2 * (1.96 + 0.84) ** 2 * .055 ** 2 / max(a - .65, .02) ** 2)) for a in tx['target AUROC']]
+tx['n to show the gain over a 0.65 baseline (paired, 80% power)'] = [n_for_delta(.65, a - .65, p_) for a, p_ in zip(tx['target AUROC'], tx['prevalence'])]
 display(md_table(tx))
-display(Markdown(f"""**Result.** To *measure* a tissue-diagnosis AUROC of 0.85 to within ±0.07 needs **{n_for_ci(.85, .5)} biopsies**; to within ±0.03, **{n_for_ci(.85, .5, .03):,}**. The pilot had 104. To settle steroid refractoriness at a target of 0.72 to within ±0.07 needs **{n_for_ci(.72, .25)} treated patients** — against the 45 samples and 10 events that were publicly available, which is why that question is open rather than answered. (The last column is an approximate paired comparison against a 0.65 clinical baseline and is indicative only; §9 does this properly with the DeLong test.)
+display(Markdown(f"""**Result.** To *measure* a tissue-diagnosis AUROC of 0.85 to within ±0.07 needs **{n_for_ci(.85, .5)} biopsies**; to within ±0.03, **{n_for_ci(.85, .5, .03):,}**. The pilot had 104. To settle steroid refractoriness at a target of 0.72 to within ±0.07 needs **{n_for_ci(.72, .25)} treated patients** — against the 45 samples and 10 events that were publicly available, which is why that question is open rather than answered. (The last column is the paired-DeLong sample size to show that a model reaching the target AUROC beats a weak 0.65 baseline; against the stronger baselines of §8.5 the gain is smaller and the n correspondingly larger, which §9 computes task by task. §9.4 asks the different question of how many labelled profiles a classifier needs in order to *learn* the signal at all.)
 
 **The actionable reading.** The tissue-diagnosis claim is within reach of a single multi-centre biopsy collection in the low hundreds — the cheapest decisive experiment in this entire programme. The response-prediction claim needs about an order of magnitude more, and only a consortium can supply it."""))
 ''')

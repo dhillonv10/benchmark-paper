@@ -15,19 +15,17 @@ md(r"""
 
 **Background.** Graft-versus-host disease (GvHD) is the principal cause of non-relapse morbidity and mortality after allogeneic haematopoietic cell transplantation (allo-HCT). Every step of transplant care rests on a prediction — which donor, which conditioning, which prophylaxis, when to intervene pre-emptively, which second-line agent, when to taper immunosuppression — and each is currently made with a different small model, or with none.
 
-**What this paper is.** Not a trained model. It is (i) a **plausibility argument** with five falsifiable premises, (ii) an explicit statement of **what such a model can and cannot be expected to predict**, (iii) a **data specification** precise enough that two centres would produce the same variable, (iv) **GvHD-Bench v1.0**, a benchmark with frozen splits, leakage-safe metrics, required baselines and submission rules, and (v) **quantitative requirements** — patients, tokens, parameters, GPU-hours, cost and accrual time — for actually training the thing.
+**What this paper is.** Not a trained model. It is (i) a **plausibility argument** with five falsifiable premises, (ii) an explicit statement of **what such a model can and cannot be expected to predict**, (iii) a **data specification** precise enough that two centres would produce the same variable, (iv) **GvHD-Bench v1.0**, a 40-task benchmark with frozen splits, leakage-safe metrics, required baselines and submission rules — *and a validation of the benchmark itself* — and (v) **quantitative requirements** for the data: how many patients, how many transcriptomes at diagnosis, how many draws and how often, how many centres, how many patients to validate and to audit subgroups, and what it costs.
 
-**Capability claims (§3).** Discrimination has a ceiling set by how much of the causal chain is observable at the decision point. We compute that ceiling. Pre-transplant prediction is close to its ceiling already (achievable ≈ 0.62–0.70), so a foundation model should not be sold on it. The real headroom is **early post-transplant** (day +7 to +14), where we claim 0.74–0.80 against ≈ 0.70–0.75 for today's biomarker-plus-clinical models. For **transcriptomic profiles taken at diagnosis** the answer splits: strong for confirming and differentiating the diagnosis in tissue (0.78–0.88, supported by our pilot's cross-laboratory transfer at 0.80 and a zero-parameter interferon-γ score at 0.80–0.88), plausible but unproven for stratifying the course once GvHD has begun, and **not** supported for pre-onset prognosis — the pilot found no reproducible pre-onset blood signal.
+**Capability claims (§3).** Discrimination has a ceiling set by how much of the causal chain is observable at the decision point. Pre-transplant prediction is close to its ceiling already (achievable ≈ 0.62–0.70), so a foundation model should not be sold on it. The real headroom is **early post-transplant** (day +7 to +14), where we claim 0.74–0.80 against ≈ 0.70–0.75 for today's biomarker-plus-clinical models. For **transcriptomic profiles at diagnosis** the answer splits: strong for confirming and differentiating the diagnosis in tissue (0.78–0.88), plausible but unproven for stratifying the course once GvHD has begun, and **not** supported for pre-onset prognosis — the pilot found no reproducible pre-onset blood signal.
 
-**Architecture (§5–§6).** The backbone is the **clinical timeline**, not the omics. A time-aware sequence model over day-0-anchored events consumes what every patient has; transcriptomes, repertoire, microbiome and pathology enter through **adapters that are optional at inference** and are trained with modality dropout. Seven objective families are specified, each with a matched control.
+**Architecture and training (§5–§7).** The backbone is the **clinical timeline**; transcriptomes, repertoire, microbiome and pathology enter through **adapters that are optional at inference**. A Tier A/B corpus of 10⁵ patients is 7.6 × 10⁸ event tokens, which makes the compute-optimal model **38 M parameters**: one pretraining run is about **3 A100-hours**, and the whole enumerated programme (seeds, scaling study, ablations, adapters, 2,880 fine-tunes) about **95 A100-hours (≈ $190; 8–1,350 hours across a 16-fold range of token budget)** — 3.4 orders of magnitude below a 7B language model. Compute is not the constraint. Data is.
 
-**Training requirements (§7).** Computed, not asserted. A Tier A/B corpus of 10⁵ patients is of the order of 10⁹ event tokens, which makes the compute-optimal model **small — tens to low hundreds of millions of parameters** — and places pretraining in the range of **10²–10³ GPU-hours and single-digit thousands of dollars**. Compute is not the constraint. Data access is.
+**GvHD-Bench and its own operating characteristics (§8).** 40 tasks in 7 families, each with a landmark *issue day* (draw day plus assay turnaround), competing events, the clinical baseline it must beat, a computed minimum sample size and a *powered / under-powered* verdict (15 / 11, with 14 tasks that carry their own criteria). We then test the benchmark like a model. A percentile bootstrap over centres **under-covers** (88 % at 8 centres, 93 % at 20; the centre-level *t*-interval holds 94–95 %). A gate that requires a point gain of +0.03 **passes a gain of exactly +0.03 only half the time**; the adopted gate (lower bound ≥ +0.01, ≥ 20 centres) passes it 85 % of the time and a gain of +0.01 about 2 %. The harness recovers planted effects of known size, returns chance on permuted outcomes, flags an informative-ordering shortcut, and catches a planted leak that inflates AUROC by 0.2. Calibration, not discrimination, drifts: a planted risk decline leaves AUROC at 0.76–0.81 while observed/expected falls to 0.69.
 
-**Benchmark (§8).** GvHD-Bench v1.0: 38 tasks in 7 families, each with a landmark, horizon, competing events, permitted inputs, the clinical baseline it must beat, a computed minimum sample size and an explicit *powered / under-powered* verdict. Metrics (IPCW time-dependent AUROC under competing risks, Aalen–Johansen calibration, net benefit) are implemented and validated against known truth. A leakage audit, a claim ladder and a pre-registered gate are included, and the whole harness is executed on a simulated 24-centre cohort containing a planted leakage feature that the audit catches and that inflates AUROC by about 0.2.
+**What data is needed (§9).** Showing +0.03 AUROC over a strong correlated baseline needs **≈ 840 patients** (2,100 if the models disagree more); developing a calibrated 768-parameter head needs **47,700**. **Transcriptome at diagnosis:** a whole-transcriptome head needs **4 × 10⁵ to 10⁶ labelled profiles** to come within 0.02 of its ceiling, a 64-dimensional adapter embedding that keeps 90 % of the signal needs **≈ 700–1,700** — the label-efficiency claim of a foundation model, quantified — and adding +0.02 to a day-7 MAP-plus-clinical baseline needs **≈ 3,500 profiles from 8 centres and can never realise more than +0.03**; at diagnosis and onset the same machinery needs ≈ 180 (tissue differential diagnosis) to ≈ 780 (steroid refractoriness) profiles. **Longitudinal:** at single-draw reliability 0.5, six draws per window recover the oracle AUROC to within 0.02; for a 10-day prodrome, draws must be 2–3.5 days apart; the minimum protocol gives only 26–69 % of cases two pre-onset specimens, so a **nested weekly cohort of ≈ 1,300 patients** is needed for 300 evaluable cases. **Centres:** 17–20 centres at a between-centre SD of 0.02 and about 40 at 0.04. **Validation and equity:** a Level-3 validation needs ≈ 1,100 patients (170 events) at AUROC 0.75 and prevalence 0.15; each subgroup needs ≈ 1,000 patients to detect a 0.10 sensitivity gap; imperfect labels (κ = 0.78) nearly double every requirement. **The bill:** a minimum-viable package is ≈ 2,600 transcriptomes at diagnosis, ≈ 4,700 patients with biomarkers and ≈ 12,000 with a full EHR timeline across 20–36 centres, **≈ $18 M and ≈ 3 years of consortium accrual**; a credible multi-claim package ≈ $51 M; a definitive Level-3 package ≈ $92 M (all unit costs †; each ×0.5/×2).
 
-**Requirements and path (§9, §11).** Showing a ΔAUROC of 0.03 against a strong baseline needs of the order of 10³ patients; a calibrated 768-parameter head needs ~5 × 10⁴. We set these against what each real source holds and project accrual time per task, then give a staged plan with go/no-go gates in which a negative result is a publishable output.
-
-**Conclusion.** A GvHD foundation model is plausible if its backbone is the clinical timeline and biology enters through adapters, and if its value is judged against registry-grade baselines under leave-centre-out and temporal validation. Public data cannot settle the question; §9 says precisely what can.
+**Conclusion.** A GvHD foundation model is plausible if its backbone is the clinical timeline and biology enters through adapters, and if its value is judged against registry-grade baselines under leave-centre-out and temporal validation with a gate whose operating characteristics are known. Public data cannot settle the question; §9 says precisely what can, and what it costs.
 """)
 
 md(r"""
@@ -37,8 +35,9 @@ md(r"""
 3. **A data specification for allo-HCT** (§4): 129 elements in 25 domains with units, timing relative to day 0, coding standards, availability tiers and leakage flags; a protocolised sampling schedule; and executable outcome-label functions with unit tests.
 4. **An architecture and objective stack** (§5–§6): event tokenisation with knowledge-time masking, a donor–recipient pair encoder, optional modality adapters, and seven objective families with matched controls.
 5. **Training requirements** (§7): token budgets per tier, compute-optimal model size, GPU-hours, cost and storage — computed from the specification.
-6. **GvHD-Bench v1.0** (§8): the benchmark, exported as a standalone specification with frozen artefacts and hashes.
-7. **A requirements-and-accrual projection** (§9) and a staged path with gates (§11), grounded in the pilot results this repository already contains (§10).
+6. **GvHD-Bench v1.0** (§8): 40 tasks, exported as a standalone specification with frozen artefacts and hashes — and, new in this version, **the benchmark validated as a measuring instrument** (§8.12): interval coverage, false-pass and power of the gate, recovery of planted effects, a permuted-outcome control, an informative-presence shortcut test, drift and recalibration, and translations to trial size and alert burden (§8.13).
+7. **A data-requirement calculus** (§9): precision, paired power and development size; accrual by route; **labelled transcriptomes at diagnosis** (closed-form learning curve, validated against simulation); **longitudinal sampling design**; **centres and between-centre variance**; **validation, subgroup and label-noise requirements**; and a **data bill of materials** in three packages with binding constraints, specimens, storage, cost and time.
+8. **A staged path with gates** (§11), grounded in the pilot results this repository already contains (§10).
 
 ### Paper map
 | § | Section | Type |
@@ -50,9 +49,9 @@ md(r"""
 | 5 | Architecture and tokenisation | design + Fig 4, Fig 5 |
 | 6 | Training objectives | formal definitions |
 | 7 | **Training requirements** — tokens, parameters, compute, cost | executed + Fig 6 |
-| 8 | **GvHD-Bench v1.0** | benchmark spec + executed metric validation + executed harness + Fig 7, Fig 8 |
-| 9 | **Sample size, power and accrual projections** | executed + Fig 9, Fig 10 |
-| 10 | Pilot evidence (the public transcriptomic benchmark) | results carried forward + Fig 11 |
+| 8 | **GvHD-Bench v1.0**, incl. **8.12 the benchmark's own operating characteristics** and **8.13 clinical translation** | benchmark spec + executed metric validation + executed harness + self-validation + Fig 7–10 |
+| 9 | **How much data is needed**: precision and power, accrual, **transcriptomes at diagnosis, longitudinal design, centres, validation, subgroups, label noise, the data bill** | executed calculators, each validated + Fig 11–16 |
+| 10 | Pilot evidence (the public transcriptomic benchmark) | results carried forward + Fig 17 |
 | 11 | Engineering path, harness, milestones, governance | plan |
 | 12 | Limitations · 13 Conclusion · References · Appendices | — |
 """)
@@ -95,6 +94,45 @@ def auroc(y, s):
     y = np.asarray(y); s = np.asarray(s)
     return float(roc_auc_score(y, s)) if len(set(y)) == 2 else float('nan')
 print('QUICK =', QUICK, '| spec files ->', os.path.abspath(SPEC_DIR))
+''')
+
+code(r'''
+# ----------------------------------------------------------------------------- statistical toolkit (defined once; validated against simulation in section 9.1)
+import functools
+def hm_se(A, n1, n0):
+    """Hanley-McNeil (1982) standard error of one AUROC."""
+    Q1, Q2 = A / (2 - A), 2 * A * A / (1 + A)
+    return math.sqrt((A * (1 - A) + (n1 - 1) * (Q1 - A * A) + (n0 - 1) * (Q2 - A * A)) / (n1 * n0))
+
+def n_for_ci(A, prev, half_width=.07):
+    """Patients needed so that the 95% CI half-width of ONE AUROC is <= half_width."""
+    for n in range(20, 400001, 10):
+        n1 = max(int(round(n * prev)), 2)
+        if 1.96 * hm_se(A, n1, n - n1) <= half_width: return n
+    return None
+
+_ZC = np.random.default_rng(11).standard_normal((2, 600_000))          # fixed common draws: the calculators are deterministic
+@functools.lru_cache(maxsize=None)
+def _pv_components(A1, A2, rho):
+    """Asymptotic DeLong structural variances of the AUROC DIFFERENCE for two equal-variance binormal scores whose
+    within-class correlation is rho: variance of the placement-value difference among positives (s10) and negatives (s01)."""
+    d1, d2 = math.sqrt(2) * norm.ppf(A1), math.sqrt(2) * norm.ppf(A2)
+    z1 = _ZC[0]; z2 = rho * _ZC[0] + math.sqrt(1 - rho * rho) * _ZC[1]
+    v10 = norm.cdf(d2 + z2) - norm.cdf(d1 + z1)                       # positive i: P(a negative scores below it)
+    v01 = norm.cdf(z1 - d1) - norm.cdf(z2 - d2)                       # negative j: P(a positive scores above it), model 2 minus model 1
+    return float(np.var(v10)), float(np.var(v01))
+def pv_components(A1, A2, rho): return _pv_components(round(float(A1), 4), round(float(A2), 4), round(float(rho), 4))
+
+def se_delta(n, prev, A1, A2, rho=.85):
+    """SE of AUROC(model 2) - AUROC(model 1) on the SAME n patients (paired)."""
+    s10, s01 = pv_components(A1, A2, rho); return math.sqrt(s10 / (n * prev) + s01 / (n * (1 - prev)))
+def power_delta(n, prev, A1, A2, rho=.85, alpha=.05):
+    d = A2 - A1; z = norm.ppf(1 - alpha / 2); se = se_delta(n, prev, A1, A2, rho)
+    return float(norm.cdf(d / se - z) + norm.cdf(-d / se - z))
+def n_for_delta(A1, delta, prev, rho=.85, power=.8, alpha=.05):
+    """Patients for `power` to detect an AUROC gain `delta` over a baseline AUROC A1 (paired DeLong, closed form)."""
+    s10, s01 = pv_components(A1, A1 + delta, rho)
+    return int(math.ceil((norm.ppf(1 - alpha / 2) + norm.ppf(power)) ** 2 * (s10 / prev + s01 / (1 - prev)) / delta ** 2))
 ''')
 
 # =====================================================================================================  1. INTRODUCTION
@@ -332,13 +370,13 @@ A foundation model for GvHD is worth building only if **all five** premises belo
 **Where the earlier attempt broke.** The transcriptome-first design failed **P3** (blood signal not shared between studies) and **P4** (public labelled n of 17–101 per study, mostly microarrays the model could not read). A clinical-timeline backbone moves the labelled-data problem from GEO (~10² samples per study) to registries (~10⁵ patients), and it treats omics as optional adapters. **That reframing is the main design decision of this paper.**
 
 ### 2.1 [SIM] S1: when does pretraining help? Shared structure versus label count
-Here we make P3 quantitative. Ten source centres and one new target centre each observe a 300-dimensional feature vector (a stand-in for a timeline or omics profile). It is generated from six latent biological factors through a centre-specific loading matrix, $W_c=\sqrt{\rho}\,W_0+\sqrt{1-\rho}\,U_c$. Here **ρ is the fraction of feature structure shared across centres**. The outcome depends only on the latent factors, in the same way at every centre. We compare four arms:
-* **raw**: ridge-logistic on the 300 features, with the penalty chosen by inner CV (the "normalised genes" baseline);
-* **pretrained**: a 16-d representation learned *without labels* on pooled source-centre data (PCA, the simplest self-supervised encoder), with a logistic head on top;
+Here we make P3 quantitative. Ten source centres and one new target centre each observe a 600-dimensional feature vector (a stand-in for a timeline or omics profile). It is generated from six latent biological factors through a centre-specific loading matrix, $W_c=\sqrt{\rho}\,W_0+\sqrt{1-\rho}\,U_c$, plus centre-specific nuisance structure that no other centre shares. Here **ρ is the fraction of feature structure shared across centres**. The outcome depends only on the latent factors, in the same way at every centre. We compare four arms:
+* **raw**: a ridge classifier on the 600 features, with the penalty chosen by inner 3-fold CV on the training labels (the "normalised genes" baseline);
+* **pretrained**: a 16-d representation learned *without labels* on pooled source-centre data (PCA, the simplest self-supervised encoder), with the same ridge head on top;
 * **random-weight twin**: a random 16-d projection, matching the control used in the pilot;
 * **oracle**: the true latent factors (an upper bound).
 
-All arms are scored on 2,000 target-centre patients against the number of labelled target patients *k*.
+The labelled target patients are drawn from a pool of 400, and all arms are scored on the 800 remaining target-centre patients, against the number of labelled target patients *k*.
 ''')
 
 code(r'''

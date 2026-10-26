@@ -2,230 +2,6 @@ from part1 import CELLS, md, code
 
 md(r'''
 ---
-# 9 · How much data is needed?
-
-Three different questions, three different answers. All are computed here.
-1. **Precision** — how wide is the confidence interval of one AUROC at sample size n? (Hanley–McNeil standard error, checked against simulation.)
-2. **Power for a comparison** — to claim "ALLO-FM beats MAP + clinical" we need a *paired* test. How many patients for ΔAUROC = 0.02 / 0.03 / 0.05? (DeLong test on correlated scores.)
-3. **Development sample size** — Riley et al.'s criteria for a model with P candidate parameters.
-''')
-
-code(r'''
-# ----------------------------------------------------------------------------- (1) precision of one AUROC; (2) paired power (DeLong)
-def hm_se(A, n1, n0):
-    Q1, Q2 = A / (2 - A), 2 * A * A / (1 + A)
-    return math.sqrt((A * (1 - A) + (n1 - 1) * (Q1 - A * A) + (n0 - 1) * (Q2 - A * A)) / (n1 * n0))
-def sim_se(A, n1, n0, reps=900, seed=0):
-    rng = np.random.default_rng(seed); d = math.sqrt(2) * norm.ppf(A)
-    return float(np.std([roc_auc_score(np.r_[np.ones(n1), np.zeros(n0)], np.r_[rng.normal(d, 1, n1), rng.normal(0, 1, n0)]) for _ in range(reps)]))
-print('Hanley–McNeil SE vs simulated SE:', [f'A={A}, n1={a}, n0={b}: {hm_se(A, a, b):.3f} vs {sim_se(A, a, b):.3f}'
-                                            for A, a, b in [(.72, 35, 65), (.72, 140, 260)]])
-ns = np.array([100, 200, 400, 800, 1600, 3200, 6400])
-prec = pd.DataFrame({f'AUROC {A}, prev {pi}': [1.96 * hm_se(A, max(int(n * pi), 2), max(int(n * (1 - pi)), 2)) for n in ns]
-                     for A in (.70, .75) for pi in (.15, .35)}, index=ns); prec.index.name = 'patients'
-
-def delong_z(y, s1, s2):
-    """DeLong z for the difference of two correlated AUROCs on the same patients (rank form)."""
-    m, n = int((y == 1).sum()), int((y == 0).sum()); aucs, v01, v10 = [], [], []
-    for s in (s1, s2):
-        X, Y = s[y == 1], s[y == 0]; tx, ty, tz = rankdata(X), rankdata(Y), rankdata(np.r_[X, Y])
-        aucs.append(tz[:m].sum() / (m * n) - (m + 1) / (2 * n)); v01.append((tz[:m] - tx) / n); v10.append(1 - (tz[m:] - ty) / m)
-    S = np.cov(np.vstack(v01)) / m + np.cov(np.vstack(v10)) / n
-    return (aucs[1] - aucs[0]) / math.sqrt(max(S[0, 0] + S[1, 1] - 2 * S[0, 1], 1e-12))
-def delong_slow(y, s1, s2):
-    pos = y == 1; m, n = pos.sum(), (~pos).sum()
-    def comps(s):
-        psi = (s[pos][:, None] > s[~pos][None, :]) + .5 * (s[pos][:, None] == s[~pos][None, :]); return psi.mean(), psi.mean(1), psi.mean(0)
-    a1, x1, y1 = comps(s1); a2, x2, y2 = comps(s2)
-    S = np.cov(np.vstack([x1, x2])) / m + np.cov(np.vstack([y1, y2])) / n
-    return (a2 - a1) / math.sqrt(S[0, 0] + S[1, 1] - 2 * S[0, 1])
-_r = np.random.default_rng(0); _y = (_r.random(150) < .35).astype(int)
-_a, _b = _r.normal(size=150) + _y, _r.normal(size=150) + .6 * _y
-assert abs(delong_z(_y, _a, _b) - delong_slow(_y, _a, _b)) < 1e-9, 'fast and textbook DeLong disagree'
-
-def paired_power(n, pi, A1, A2, rho, reps=120 if not QUICK else 40, seed=0):
-    rng = np.random.default_rng(seed); n1 = max(int(round(n * pi)), 3); n0 = n - n1
-    d1, d2 = math.sqrt(2) * norm.ppf(A1), math.sqrt(2) * norm.ppf(A2); cov = np.array([[1, rho], [rho, 1]]); hit = 0
-    for _ in range(reps):
-        sp = rng.multivariate_normal([d1, d2], cov, n1); sn = rng.multivariate_normal([0, 0], cov, n0)
-        y = np.r_[np.ones(n1), np.zeros(n0)]
-        hit += abs(delong_z(y, np.r_[sp[:, 0], sn[:, 0]], np.r_[sp[:, 1], sn[:, 1]])) > 1.96
-    return hit / reps
-grid = [200, 400, 800, 1600, 3200, 6400]
-pw_rows = []
-for d in (.02, .03, .05):
-    for rho in (.6, .85):
-        p_ = {n: paired_power(n, .35, .70, .70 + d, rho) for n in grid}
-        n80_ = next((n for n in grid if p_[n] >= .8), f'>{grid[-1]}')
-        pw_rows.append(dict(delta_AUROC=d, score_corr=rho, **{f'n={n}': p_[n] for n in grid}, n_for_80pct_power=n80_))
-pw = pd.DataFrame(pw_rows)
-PARAMS = [1, 5, 10, 20, 50, 100, 256, 768, 3072]
-riley = pd.DataFrame([dict(params=P, **{f'AUROC {A}': riley_n(P, A, .35)['n'] for A in (.68, .72, .75)})
-                      for P in PARAMS]).set_index('params')
-fig = plt.figure(figsize=(FULL, 3.0))
-gs = fig.add_gridspec(1, 3, width_ratios=[1, 1.1, 1], left=.075, right=.985, bottom=.255, top=.875, wspace=.38)
-ax = fig.add_subplot(gs[0, 0]); ygrid(ax)                                          # (a) precision of one AUROC
-for c_, col in zip(prec.columns, (PAL['seq'][3], PAL['seq'][1], PAL['orange'], PAL['grey'])):
-    ax.plot(prec.index, prec[c_], marker='o', ms=2.8, color=col, lw=1.3, label=c_.replace('AUROC ', 'AUROC ').replace('prev ', '$\\pi$ = '))
-ax.axhline(.03, color=PAL['bad'], ls=':', lw=.9)
-ax.annotate('target ±0.03', (prec.index[0] * 1.04, .03), xytext=(0, 3), textcoords='offset points', fontsize=6.4, color=PAL['bad'], va='bottom')
-ax.set_xscale('log'); ax.set_xlabel('patients'); ax.set_ylabel('95% CI half-width of one AUROC'); ax.set_xlim(90, 9e3)
-ax.legend(loc='upper right', labelspacing=.3); panel(ax, 'a')
-ax = fig.add_subplot(gs[0, 1]); ygrid(ax)                                          # (b) power to show a gain over a correlated baseline
-DCOL = {.02: PAL['seq'][0], .03: PAL['seq'][2], .05: PAL['violet']}
-for _, r_ in pw.iterrows():
-    ax.plot(grid, [r_[f'n={n}'] for n in grid], marker='o', ms=2.8, color=DCOL[r_.delta_AUROC], lw=1.3, ls='-' if r_.score_corr == .85 else '--')
-ax.axhline(.8, color=PAL['bad'], ls=':', lw=.9)
-ax.set_xscale('log'); ax.set_xticks(grid); ax.set_xticklabels([f'{g // 1000}k' if g >= 1000 else g for g in grid]); ax.minorticks_off()
-ax.set_xlim(150, 8e3); ax.set_ylim(0, 1.05); ax.set_xlabel('patients (prevalence 0.35)'); ax.set_ylabel('power, paired DeLong test')
-hs = [plt.Line2D([], [], color=DCOL[d], lw=1.5) for d in (.05, .03, .02)] + [plt.Line2D([], [], color=PAL['ink2'], lw=1.2), plt.Line2D([], [], color=PAL['ink2'], lw=1.2, ls='--')]
-ax.legend(hs, ['gain 0.05', 'gain 0.03', 'gain 0.02', 'scores r = 0.85', 'scores r = 0.60'], loc='upper center',
-          bbox_to_anchor=(.5, -.24), ncol=5, columnspacing=1.3, handlelength=1.6, labelspacing=.3); panel(ax, 'b')
-ax = fig.add_subplot(gs[0, 2]); ygrid(ax)                                          # (c) patients needed to develop a model
-for c_, col in zip(riley.columns, (PAL['seq'][1], PAL['seq'][2], PAL['seq'][3])):
-    ax.plot(riley.index, riley[c_], marker='o', ms=2.8, color=col, lw=1.3, label=c_.replace('AUROC ', 'target AUROC '))
-for P_, lab in ((20, 'registry\nmodel'), (768, 'FM embedding\nhead')):                  # labelled above the axes, centred on their own line
-    ax.axvline(P_, ymin=.32, color=PAL['ink2'], lw=.6, ls=':')
-    ax.annotate(lab, (P_, 1.0), xycoords=('data', 'axes fraction'), xytext=(0, 3), textcoords='offset points',
-                fontsize=6.4, color=PAL['ink2'], va='bottom', ha='center')
-ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xlabel('candidate parameters $P$'); ax.set_ylabel('patients to develop the model')
-ax.set_xlim(.8, 1.2e4); ax.set_ylim(25, 6e5); ax.legend(loc='lower right', labelspacing=.3); panel(ax, 'c')
-finish(fig, 9, 'sample_size_and_power',
-       'Three different sample-size questions. (a) Precision: the 95% confidence interval of a single AUROC against the number of '
-       'patients. (b) Power: the paired DeLong test for an improvement of 0.02 to 0.05 AUROC over a correlated baseline, the regime '
-       'any foundation-model claim lives in; solid lines are scores correlated at 0.85, dashed at 0.60. (c) Development: the Riley '
-       'minimum sample size against the number of candidate parameters, which is why head size sets the data requirement.')
-display(md_table(prec.round(3), index=True)); display(md_table(pw.round(2))); display(md_table(riley, index=True))
-''')
-
-code(r'''
-# ----------------------------------------------------------------------------- what each data source can actually support
-n80 = lambda d, rho: pw[(pw.delta_AUROC == d) & (pw.score_corr == rho)].n_for_80pct_power.iloc[0]
-SOURCES = [('One large centre, 10 years (Tier A+B)', 2500), ('BMT CTN 1703 (randomised, Tier A+C)', 431),
-           ('MAGIC day-7 biomarker cohort (Tier A+C)', 1287), ('MSK hospitalome (public, Tier A+B+microbiome)', 1000),
-           ('CIBMTR extract, recent era, selected donor types (Tier A)', 25000), ('CIBMTR full (Tier A)', 470000),
-           ('Typical public GEO GvHD series (Tier D)', 40)]
-need = {'registry model (P=20)': riley_n(20, .72, .35)['n'], 'pathway/panel head (P=50)': riley_n(50, .72, .35)['n'],
-        'FM embedding head (P=768)': riley_n(768, .72, .35)['n'],
-        f'show Δ=0.03 vs baseline (corr .85)': n80(.03, .85), f'show Δ=0.05 vs baseline (corr .85)': n80(.05, .85)}
-cap = pd.DataFrame([dict(source=s, patients=n, **{k: ('yes' if isinstance(v, (int, float)) and n >= v else 'NO') for k, v in need.items()}) for s, n in SOURCES])
-print('requirements (patients):', {k: (f'{v:,}' if isinstance(v, (int, float)) else v) for k, v in need.items()})
-display(md_table(cap))
-display(Markdown(f"""**Reading.** (1) Even a *single* AUROC is imprecise below ~1,000 patients: at n = 400 and prevalence 0.35 the 95 % CI half-width is ±{prec.loc[400, 'AUROC 0.7, prev 0.35']:.3f}. (2) Showing that a foundation model beats MAP + clinical covariates by Δ = 0.03 — the realistic size of a genuine gain between correlated models — needs about **{n80(.03, .85) if isinstance(n80(.03,.85), str) else format(n80(.03,.85), ',')}** patients at score correlation 0.85, and more if the correlation is lower; Δ = 0.02 is out of reach of anything short of a registry. (3) Developing a 768-parameter head at AUROC 0.72 and prevalence 0.35 needs **{riley_n(768, .72, .35)['n']:,}** patients unpenalised; ridge shrinkage and pretraining are precisely the arguments for needing fewer, which is the claim the benchmark exists to test.
-
-**The conclusion that drives the whole roadmap.** No public transcriptomic resource and no single trial can answer the central question. **A registry-scale Tier A/B cohort, with Tier C biomarkers on a subset, is the minimum viable evaluation substrate.** This is why ALLO-FM is specified as a clinical-timeline model with optional omics adapters, and not the other way round."""))
-''')
-
-md(r"""
-## 9.3 How long would it take? Accrual projections per task
-
-Required n becomes a plan only when divided by a rate. The rates below are deliberately conservative and are stated as assumptions: a large transplant centre performs of the order of **150–250 allogeneic transplants a year** †; a committed **20-centre consortium** with protocolised biospecimen collection therefore accrues of the order of **2,000–4,000 a year**; a **registry extract is retrospective**, so its "accrual" is the historical back-catalogue plus roughly 10,000 new US allogeneic transplants a year †. Prospective collection also loses patients to consent and to specimen failure; we assume 70 % usable.
-
-The projection below answers, for each task that has a numeric target: given the n it needs, how long would each route take to get there? This is what converts "we need more data" into a proposal.
-""")
-
-code(r'''
-# ----------------------------------------------------------------------------- accrual projection: years to reach the required n, by route
-ROUTES = [  # name, patients per year contributing to a Tier-C-grade task, tier reachable, retrospective back-catalogue
-    ('single centre, prospective',        200 * .70,  'A+B+C', 0),
-    ('20-centre consortium, prospective', 3000 * .70, 'A+B+C', 0),
-    ('registry extract (CIBMTR/EBMT)',    10000.0,    'A+B',   120000),
-    ('existing biobank (MAGIC/BMT CTN)',  0.0,        'A+B+C', 4000),
-]
-need_tbl = reg_full.dropna(subset=['n to show +0.03']).copy()
-need_tbl['n required'] = need_tbl[['n to develop (50-param)', 'n to show +0.03']].max(axis=1)
-rows = []
-for _, r in need_tbl.iterrows():
-    tier_need = str(r['tier needed'])
-    for name, rate, tier_ok, backlog in ROUTES:
-        deep_needed = ('C' in tier_need) or ('D' in tier_need)
-        route_has_deep = 'C' in tier_ok
-        if deep_needed and not route_has_deep:
-            yrs = np.nan                                     # this route cannot serve this task at all
-        else:
-            remaining = max(r['n required'] - backlog, 0)
-            yrs = 0.0 if remaining == 0 else (remaining / rate if rate > 0 else np.inf)
-        rows.append(dict(task=r.id, route=name, **{'n required': int(r['n required']), 'years': yrs}))
-acc = pd.DataFrame(rows)
-piv_acc = acc.pivot(index='task', columns='route', values='years')
-piv_acc = piv_acc.reindex([c[0] for c in ROUTES], axis=1)
-fmt = piv_acc.copy()
-for c in fmt.columns:
-    fmt[c] = [('—' if not np.isfinite(v) and np.isnan(v) else ('never' if v == np.inf else ('now' if v == 0 else f'{v:.1f} y')))
-              for v in piv_acc[c]]
-fmt.insert(0, 'n required', need_tbl.set_index('id').loc[fmt.index, 'n required'].astype(int).values)
-display(md_table(fmt.reset_index()))
-
-# ------------------------------------------------- Figure 10: what exists against what is needed, and how long it would take
-FWIN, FHIN = FULL, 4.6
-fig = plt.figure(figsize=(FWIN, FHIN))
-axa = fig.add_axes([1.33 / FWIN, .95 / FHIN, 1.75 / FWIN, 3.15 / FHIN])
-axb = fig.add_axes([4.15 / FWIN, .95 / FHIN, 2.95 / FWIN, 3.15 / FHIN])
-SRC = [('CIBMTR full (2017)', 470000, PAL['aqua']), ('Registry extract', 120000, PAL['aqua']), ('MAGIC day-7 cohort', 1287, PAL['orange']),
-       ('MSK hospitalome', 1000, PAL['orange']), ('Pilot, 9 studies', 838, PAL['grey2']), ('BMT CTN 1703', 431, PAL['orange']),
-       ('GEO series (typical)', 40, PAL['grey2'])]
-ax = axa; ygrid(ax, 'x')
-ax.barh(range(len(SRC)), [v for _, v, _ in SRC], color=[c for _, _, c in SRC], height=.62, zorder=3)
-ax.set_yticks(range(len(SRC))); ax.set_yticklabels([f'{n}\nn = {v:,}' for n, v, _ in SRC]); ax.tick_params(axis='y', length=0)
-ax.set_xscale('log'); ax.set_xlim(10, 1e6); ax.set_ylim(len(SRC) - .5, -.5); ax.minorticks_off()
-n20, n768 = riley_n(20, .72, .35)['n'], riley_n(768, .72, .35)['n']
-ax.axvline(n20, color=PAL['ink'], ls='--', lw=.9, zorder=4); ax.axvline(n768, color=PAL['bad'], ls='--', lw=.9, zorder=4)
-ax.set_xlabel('patients (log scale)')
-ax.annotate('a', (0, 1), xycoords='axes fraction', xytext=(-1.25 * 72, 32), textcoords='offset points', fontsize=9, fontweight='bold')
-fig.legend([plt.Rectangle((0, 0), 1, 1, color=PAL['aqua']), plt.Rectangle((0, 0), 1, 1, color=PAL['orange']), plt.Rectangle((0, 0), 1, 1, color=PAL['grey2']),
-            plt.Line2D([], [], color=PAL['ink'], ls='--', lw=.9), plt.Line2D([], [], color=PAL['bad'], ls='--', lw=.9)],
-           ['registry', 'consortium / biobank', 'public', f'needed to develop a 20-parameter model ({n20:,})',
-            f'needed to develop a 768-parameter head ({n768:,})'], ncol=2, loc='lower left', bbox_to_anchor=(.02, .0),
-           columnspacing=1.4, handlelength=1.4, labelspacing=.4)
-# (b) years to reach the required n, task by task and route, as a matrix
-ROUTE_NAMES = ['single\ncentre', '20-centre\nconsortium', 'registry\nextract', 'existing\nbiobank']
-RT = ['single centre, prospective', '20-centre consortium, prospective', 'registry extract (CIBMTR/EBMT)', 'existing biobank (MAGIC/BMT CTN)']
-tbl = piv_acc[RT].copy(); tbl['best'] = tbl.min(axis=1, skipna=True); tbl = tbl.sort_values('best').drop(columns='best')
-nreq = need_tbl.set_index('id')['n required']
-def cls(v):
-    if np.isnan(v): return 3
-    if v == 0: return 0
-    return 0 if v <= 1 else 1 if v <= 5 else 2
-def txt(v):
-    if np.isnan(v): return '—'
-    if v == 0: return 'now'
-    return '>40 y' if v > 40 else (f'{v:.1f} y' if v < 10 else f'{v:.0f} y')
-ax = axb
-CELLC = [PAL['aqua'], PAL['seq'][0], PAL['orange'], '#ececea']; CELLA = [.85, .85, .55, 1.0]
-nr, nc = len(tbl), 5
-for i, (tid, row) in enumerate(tbl.iterrows()):
-    ax.text(0.5, i, f'{int(nreq[tid]):,}', ha='center', va='center', fontsize=6.4, color=PAL['ink'])
-    for j, rt in enumerate(RT):
-        v = row[rt]; ax.add_patch(plt.Rectangle((j + 1.03, i - .46), .94, .92, color=CELLC[cls(v)], alpha=CELLA[cls(v)], lw=0))
-        _t = ax.text(j + 1.5, i, txt(v), ha='center', va='center', fontsize=6.3, color=PAL['ink'] if cls(v) != 3 else PAL['ink2'])
-        _t._ok_overlap = True      # the label belongs to this cell
-ax.set_xlim(0, nc); ax.set_ylim(nr - .5, -.5)
-ax.set_yticks(range(nr)); ax.set_yticklabels(tbl.index); ax.tick_params(axis='y', length=0)
-ax.xaxis.tick_top(); ax.set_xticks(np.arange(nc) + .5); ax.set_xticklabels(['patients\nrequired'] + ROUTE_NAMES); ax.tick_params(axis='x', length=0)
-for sp in ax.spines.values(): sp.set_visible(False)
-ax.annotate('b', (0, 1), xycoords='axes fraction', xytext=(-.45 * 72, 32), textcoords='offset points', fontsize=9, fontweight='bold')
-fig.legend([plt.Rectangle((0, 0), 1, 1, color=c, alpha=a) for c, a in zip(CELLC, CELLA)],
-           ['covered now or within 1 year', 'within 5 years', 'more than 5 years', 'route cannot serve the task'],
-           ncol=2, loc='lower right', bbox_to_anchor=(.99, .0), columnspacing=1.2, handlelength=1.2, labelspacing=.4)
-finish(fig, 10, 'data_landscape_and_accrual',
-       'What exists against what is needed, and how long it would take. (a) Patients available from each real source on a log scale, '
-       'against the Riley minimum for two head sizes: public transcriptomic resources are orders of magnitude short, registry extracts are '
-       'not. (b) Projected time to reach the patients required for each task, by route. Tasks that need protocolised biospecimens cannot '
-       'be served by a registry extract at all, which is why the staged plan buys the registry tasks first and the biobank tasks second.')
-''')
-
-code(r'''
-reg_now = int((piv_acc['registry extract (CIBMTR/EBMT)'] == 0).sum())
-cons_5y = int((piv_acc['20-centre consortium, prospective'] <= 5).sum())
-sc_5y = int((piv_acc['single centre, prospective'] <= 5).sum())
-display(Markdown(f"""**Result.** Of the {len(piv_acc)} tasks with a numeric target, **{reg_now} are already satisfied by the historical back-catalogue of a registry extract** — no waiting, no new collection, only a data-use agreement. A **20-centre consortium reaches {cons_5y} of them within five years**; a **single centre reaches {sc_5y}**, which is the quantitative case for a consortium rather than a local study.
-
-**The strategic ordering falls out of the arithmetic.** Buy the registry tasks first (they are free in time and need only governance), use an existing biobank for the day-7 biomarker tasks (MAGIC-scale specimens already exist), and start prospective collection *now* for the tasks nothing can shortcut — the adjudicated differential-diagnosis set (C1, C2) and the treated-patient response cohorts (C4, C5) — because those are the ones whose clock has not started. That ordering is §11's staged plan, and this projection is its justification."""))
-''')
-
-
-md(r'''
----
 # 10 · Pilot evidence: what the transcriptome-first attempt established
 
 Before this specification we built and ran the opposite design: expression as the backbone, GvHD as the label, public data only. The full notebook is `GvHD_FM_benchmark_blueprint.ipynb` in this repository; its numbers are reproduced here as the empirical starting point of the present paper. Nine public studies, 838 samples after QC, three platforms, blood and tissue, patient-grouped splits throughout, with random-weight twins and confounder-only comparators.
@@ -240,7 +16,7 @@ Before this specification we built and ran the opposite design: expression as th
 | Input compatibility | **5 of 9** studies (microarray or gene-restricted release) could not be embedded at all | a single-cell-counts foundation model cannot read most public GvHD data |
 | Zero-parameter IFN-γ / allograft-rejection score, no fitting | skin and colon **0.80–0.88**; sorted PtCy T cells **below 0.5** | the model-free biology baseline is strong *in inflamed tissue*; it is the baseline for C7 |
 | cfRNA, the only large public longitudinal set (92 patients) | pre-GvHD samples AUROC **0.32** [0.14, 0.48]; forecasting month 1 → month 2 barely beat the population mean | **no reproducible pre-onset signal** in public blood; prognosis needs protocolised collection (§4.4) |
-| Label efficiency | tissue curve still rising at k = 256; blood flat at 0.52–0.59 whatever k | blood's problem was **domain shift, not sample count** — the ρ = 0 regime of Figure 2 |
+| Label efficiency | tissue curve still rising at k = 256; blood flat at 0.52–0.59 whatever k | blood's problem was **domain shift, not sample count** — the ρ = 0 regime of Figure 2 (and, quantitatively, the plateau of Figure 13c) |
 | Data quality | 4 of 54 skin libraries were empty, including 2 of 9 controls | QC audits belong in the harness, not in the appendix |
 
 **Three design decisions follow directly.**
@@ -252,7 +28,7 @@ Before this specification we built and ran the opposite design: expression as th
 ''')
 
 code(r'''
-# ----------------------------------------------------------------------------- Figure 11: the pilot results that this paper is built on (numbers from the earlier notebook)
+# ----------------------------------------------------------------------------- Figure 17: the pilot results that this paper is built on (numbers from the earlier notebook)
 PILOT_LOSO = [('PBMC T cells', .790, 'blood'), ('CD8 subsets', .413, 'blood'), ('PtCy T cells', .577, 'blood'), ('sc pseudobulk', .595, 'blood'),
               ('colon (1)', .826, 'tissue'), ('colon (2)', .833, 'tissue'), ('skin', .754, 'tissue')]
 FM_ARMS = [('plain\ngenes', .756, None), ('GF\n10M', .498, .547), ('GF\n104M', .678, .614), ('GF\n316M', .615, .652)]
@@ -296,7 +72,7 @@ ax.set_xticks(range(5)); ax.set_xticklabels([n for n, _, _ in ZP], rotation=35, 
 ax.set_ylim(0, 1.0); ax.set_ylabel('AUROC, no fitting\n(IFN-γ / allograft score)'); panel(ax, 'c')
 ax.legend([plt.Rectangle((0, 0), 1, 1, color=TC), plt.Rectangle((0, 0), 1, 1, color=BC)], ['tissue', 'blood / T cells'],
           loc='upper right', handlelength=1.0, labelspacing=.3)
-finish(fig, 11, 'pilot_results',
+finish(fig, 17, 'pilot_results',
        'The pilot this paper is built on (9 public studies, 838 samples; numbers from the earlier notebook in this repository). '
        '(a) Leave-one-study-out transfer with plain normalised genes: tissue biopsies transfer across laboratories and organs, blood '
        'and sorted T cells do not. (b) Frozen Geneformer (GF) at three sizes against its own random-weight twins and against plain '
@@ -353,10 +129,10 @@ md(r'''
 | Stage | Work | Data needed | Go / no-go |
 |---|---|---|---|
 | **0 · Specification** | This document: data dictionary, label functions, task registry, metrics, gate, harness (all exported to `spec/`) | none | Done when the notebook runs end-to-end and the exported files validate |
-| **1 · One-centre Tier A+B** | Build the OMOP + HCT-extension extract for one large centre (10³–10⁴ transplants); implement O-T1/O-T2/O-T3; run tasks A1–A5, B1–B6, C1–C5 with leave-era-out | single-centre IRB | Proceed only if the timeline model reaches **Level 1** against tuned trees on registry variables |
+| **1 · One-centre Tier A+B** | Build the OMOP + HCT-extension extract for one large centre (10³–10⁴ transplants); implement O-T1/O-T2/O-T3; run tasks A1–A5, B1–B6, C1–C5 with leave-era-out | single-centre IRB | Proceed only if the timeline model reaches **Level 1** against tuned trees on registry variables. **Also measure the three quantities the plan rests on**: the between-centre SD τ of the gain (sets the centre count, §9.6), the shared fraction ρ of the signal (sets the plateau, §9.4) and label reliability κ (§9.7) |
 | **2 · Multi-centre Tier A** | CIBMTR (and/or EBMT) extract; pretrain at scale; leave-centre-out and leave-registry-out; run the scaling ablation | registry study proposal + DUA | Proceed only if **Level 2** is reached on the primary task B1, with the random-weight twin and no-pretraining arms both beaten |
-| **3 · Tier C adapters** | MAGIC / BMT CTN biorepository: biomarker, flow and microbiome adapters; tier-ablation task G4 | consortium collaboration | Proceed if an adapter adds ≥ 0.02 AUROC over Tier A+B at the same n, out of centre |
-| **4 · Tier D and mechanism** | Repertoire, single-cell, pathology adapters on nested sub-cohorts; tasks C7, F1–F3 | prospective protocol (§4.4) | Research output regardless; no deployment claim |
+| **3 · Tier C adapters** | MAGIC / BMT CTN biorepository: biomarker, flow and microbiome adapters; tier-ablation task G4 | consortium collaboration | Proceed if an adapter adds ≥ 0.02 AUROC over Tier A+B at the same n, out of centre. Package size: the **minimum-viable** row of the data bill (§9.8) |
+| **4 · Tier D and mechanism** | Repertoire, single-cell, pathology adapters on nested sub-cohorts; tasks C7, F1–F3 | prospective protocol (§4.4), with the nested weekly trajectory cohort of §9.5 | Research output regardless; no deployment claim |
 | **5 · Prospective silent mode** | Model runs without influencing care; calibration drift monitored; subgroup audit | prospective approval | Level 3 only if calibration and net benefit hold prospectively |
 | **6 · Interventional trial** | Randomise the *decision* (e.g. model-guided pre-emptive therapy vs standard) | trial | Only this licenses "improves outcomes" |
 
@@ -379,13 +155,16 @@ md(r'''
 ---
 # 12 · Limitations
 
-1. **Nothing here is trained.** This is a specification with executed statistics and simulations, not a model. Figures 2 and 4 are **[SIM]**: their effect sizes are ours, chosen to exercise the machinery, and they say nothing about patients.
+1. **Nothing here is trained.** This is a specification with executed statistics and simulations, not a model. Figures 2, 8, 9 and 10 and the learning-curve, longitudinal and gate calculations of §9 rest on **[SIM]** or on stated closed-form models: their effect sizes and assumptions are ours, chosen to exercise the machinery, and they say nothing about patients.
 2. **The clinical-timeline premise is itself untested for GvHD.** Label efficiency from EHR foundation models is published for other endpoints (✓ for MOTOR's reported numbers), not for GvHD. Stage 1 exists to test it, and may refute it.
 3. **The data dictionary is a target, not an inventory.** No single existing cohort holds all 25 domains. The tier structure is the honest statement of what is available where.
 4. **Some definitions are from domain knowledge (†)** and must be checked line-by-line against the primary consensus documents before submission: the MAGIC grade table, the 2018 steroid-refractoriness criteria, NIH 2014 organ scoring, refined DRI, HCT-CI weights, the DPB1 TCE algorithm, and the EBMT SOS criteria. The *code* in §4.6 is the authoritative version of what this benchmark means by each label, and it is testable; if it disagrees with the consensus table, the consensus table wins and the code must change.
 5. **Prevalences in the registry are planning assumptions**, so every "minimum n" moves with the real prevalence of the cohort.
 6. **Competing-risk discrimination is still contested.** IPCW time-dependent AUROC depends on a correct censoring model; informative censoring (transfer of care, which correlates with outcome) will bias it. We report Brier/IBS and calibration alongside, and the censoring model is part of the audit.
 7. **Simulation cannot validate the premises.** Figure 2 shows *that* pretraining depends on shared structure; only real multi-centre data can show *whether* GvHD data has it.
+8. **The sample-size calculators are models, with stated assumptions.** The learning curve of §9.4 assumes a linear head, an equal-covariance binormal signal and a retained-signal fraction κ that is an assumption until tasks F2/G4 measure it; the paired-power and validation sizes assume equal-variance binormal scores; the longitudinal results assume a prodrome length and a single-draw reliability that are properties of each assay, to be measured with bridging and replicate samples. Each was checked against simulation where the model is exact and stress-tested where it is not, but none was checked against real GvHD data, because that data does not yet exist.
+9. **The three quantities that set the plan are unmeasured**: the between-centre SD τ of the gain, the cross-centre shared fraction ρ, and label reliability. We plan at τ = 0.02/0.03/0.04 and ρ = 0.8, and stage 1 measures them; if they are worse, §9.4, §9.6 and §9.8 give the revised requirement.
+10. **Unit costs, subgroup shares and onset-time distribution are planning assumptions (†).** The cost of the data bill is an order of magnitude, shown with a ×0.5/×2 range, not a budget.
 
 ---
 # 13 · Conclusion
@@ -453,7 +232,9 @@ def _bench_md():
           '## 5 Required baselines (every task, same table as the model)', '']
     for b in GATE['baselines_to_beat']: L.append(f'- {b}')
     L += ['- confounder-only model (centre, era, assay batch, pre-analytics, sampling day)',
-          '- treatment-proxy-only model, run deliberately as a leakage canary', '',
+          '- treatment-proxy-only model, run deliberately as a leakage canary',
+          '- presence-only model (whether and when each lab/drug/assay was recorded, no values); the audit warns if it beats chance by > 0.02',
+          '- permuted-outcome and negative-exposure controls (task G7): the false-pass rate of the whole pipeline', '',
           '## 6 Splits', '',
           '- leave-centre-out (default), temporal (mandatory for deployment claims), leave-registry-out (hardest).',
           '- Patients never span folds; donors never span folds; centres are never split.',
@@ -469,12 +250,21 @@ def _bench_md():
           '## 8 Claim ladder', '']
     for lvl, txt in (('0', 'nothing'),
                      ('1', 'more label-efficient than a tuned simple model (equal at full labels, better at k <= 100, beats its random-weight twin)'),
-                     ('2', 'better out-of-centre discrimination (>= +0.03 vs best simple model AND vs the clinical baseline; centre-bootstrap CI excludes 0; improves in >= 70% of held-out centres; survives BH; beats random-weight twin and no-pretraining)'),
+                     ('2', 'better out-of-centre discrimination (>= 20 held-out centres; centre-level 95% t-interval of the paired AUROC difference has a lower bound >= +0.01 against the best simple model AND the clinical baseline; improves in >= 70% of held-out centres; survives BH; beats random-weight twin and no-pretraining)'),
                      ('3', 'clinically useful (Level 2 plus calibration slope 0.8-1.25, positive net benefit 10-40%, leave-centre-out AND temporal validation, n >= the Riley minimum, prospective silent-mode evaluation)'),
                      ('4', 'improves outcomes — requires a prospective trial of the model-guided decision; nothing less licenses the word')):
         L.append(f'- **Level {lvl}**: {txt}')
     L += ['', '## 9 Pre-registered gate for the v1 attempt', '', '```json', json.dumps(GATE, indent=2), '```', '',
-          '## 10 Required artefacts for a published result', '',
+          'Operating characteristics of this gate (notebook 8.12): the centre-level t-interval keeps its 95% coverage at every number of centres, whereas a percentile bootstrap over centres does not;',
+          f'at 20 centres of ~300 patients and a between-centre SD of 0.02 the gate passes a true gain of +0.03 with probability {g20(.03, "pass_adopted"):.2f} and a true gain of +0.01 with probability {g20(.01, "pass_adopted"):.2f}.', '',
+          '## 10 Benchmark-validity requirements', '',
+          '- **Issue day**: a prediction is issued on the landmark day and may use a specimen only once its result exists (draw day + assay turnaround).',
+          '- **Label reliability**: at least 10% of outcomes double-read; kappa >= 0.8, else the attenuation of notebook 9.7 is applied to every required n.',
+          '- **Subgroups (G3)**: a subgroup is assessed only with the events notebook 9.7 requires (about 1,000 patients for an equal-opportunity gap of 0.10); otherwise it is reported as not assessable.',
+          '- **Drift (G1)**: report observed/expected incidence per calendar year and the recalibration plan.',
+          '- **Utility**: report trial-size saving under enrichment and alerts per 100 patient-days alongside AUROC (notebook 8.13).',
+          '- **Target-trial emulation (G6)**: reproduce the BMT CTN 1703 GRFS effect (HR 0.64, 95% CI 0.49-0.83) from registry data.', '',
+          '## 11 Required artefacts for a published result', '',
           '- benchmark version and artefact hashes; attrition table; per-task primary metric with CI; per-centre values;',
           '- calibration slope and intercept; net benefit 10-40%; all mandatory baselines; the ablation suite;',
           '- the leakage audit output; the seed list; and the negative-results table of what did not beat its baseline.', '']
@@ -504,6 +294,40 @@ display(md_table(figman[['figure', 'slug', 'files']]))
 
 
 code(r'''
+# ----------------------------------------------------------------------------- export the data requirements as a standalone document + CSVs
+T = lambda df, **kw: md_table(df, **kw).data
+def _req_md():
+    q = bom[bom.package == 'minimum viable']
+    L = ['# Data requirements for ALLO-FM and GvHD-Bench v1.0', '',
+         f'Generated by `ALLO_FM_GvHD_foundation_model.ipynb` on {time.strftime("%Y-%m-%d", time.gmtime())}. Every number below is computed in the notebook (section 9); '
+         'items marked † are planning assumptions (unit costs, subgroup shares, onset-time distribution, retained-signal fraction kappa).', '',
+         '## 1 Headline requirements', '',
+         f'- **Paired comparison**: showing a gain of +0.03 AUROC over a correlated baseline needs about {n80(.03, .85):,} patients (score correlation 0.85; {n80(.03, .6):,} at 0.60).',
+         f'- **Development**: a 768-parameter head at AUROC 0.72 and prevalence 0.35 needs {riley_n(768, .72, .35)["n"]:,} patients (Riley); a 50-parameter head {riley_n(50, .72, .35)["n"]:,}.',
+         f'- **Transcriptome at diagnosis**: a whole-transcriptome head needs {min(n_whole, n_whole75):,.0f}-{max(n_whole, n_whole75):,.0f} labelled profiles to come within 0.02 AUROC of its ceiling; a 64-d adapter embedding retaining 90% of the signal needs {min(n_adapt, n_adapt75):,.0f}-{max(n_adapt, n_adapt75):,.0f}.',
+         f'- **Centres**: {K_required(.03, .02, 300)} centres of ~300 patients give the gate 80% power for a +0.03 gain at between-centre SD 0.02; {K_required(.03, .04, 300)} at 0.04.',
+         f'- **Longitudinal**: with single-draw reliability 0.5, {k_needed(.80, .5, .02)} draws per window recover the oracle AUROC to within 0.02; sampling interval must be well under the prodrome length (every 2-3.5 days for a 10-day prodrome).',
+         f'- **Validation (Level 3)**: {vtab[(vtab.AUROC == .75) & (vtab.prevalence == .15)].patients.iloc[0]:,} patients ({vtab[(vtab.AUROC == .75) & (vtab.prevalence == .15)].events.iloc[0]:,} events) at AUROC 0.75 and prevalence 0.15.',
+         f'- **Compute**: the whole training programme is about {fmt_h(PROG_H)} on one A100 ({fmt_usd(PROG_H * USD_PER_H)}); data collection and assays cost orders of magnitude more.', '',
+         '## 2 The transcriptome at diagnosis', '', T(plan), '', T(txt_disp), '',
+         '## 3 Longitudinal design', '', T(kn), '', T(prod), '', T(disp_sched), '',
+         '## 4 Centres', '', T(ktab), '', T(dex), '',
+         '## 5 Validation, subgroups and label noise', '', T(vtab[['AUROC', 'prevalence', 'patients', 'events', 'binding criterion']]), '', T(sg_disp), '', T(ltab), '',
+         '## 6 The data bill of materials', '', T(show[['layer', 'package', 'patients', 'centres', 'specimens per patient', 'specimens', 'storage_TB', 'assays + collection (USD)', 'binding']]), '', T(cd, index=True), '',
+         '## 7 Assumptions (†)', '',
+         '- Unit costs (USD): ' + ', '.join(f'{k} {v:,}' for k, v in UNIT.items()) + '.',
+         '- Usable fraction of prospective patients: 70%; large-centre volume 200 transplants a year; 20-centre consortium 3,000 a year.',
+         '- Onset of grade II-IV aGvHD: log-normal, median day 28; pre-onset window 14 days; subgroup shares as listed in section 5.',
+         '- Retained-signal fraction of an adapter embedding kappa = 0.9 (to be measured by tasks F2 and G4); nuisance-structure multiplier on the effective dimension of a raw-gene head measured by the stress test of section 9.4.']
+    return '\n'.join(L)
+bench_req_path = os.path.join(SPEC_DIR, 'DATA_REQUIREMENTS_v1.0.md')
+open(bench_req_path, 'w').write(_req_md())
+bom.to_csv(os.path.join(SPEC_DIR, 'data_requirements.csv'), index=False)
+cost.to_csv(os.path.join(SPEC_DIR, 'programme_cost.csv'))
+print(f'wrote {bench_req_path} ({os.path.getsize(bench_req_path) / 1024:.0f} kB) and data_requirements.csv, programme_cost.csv')
+''')
+
+code(r'''
 # ----------------------------------------------------------------------------- export the specification bundle and verify it
 manifest = {}
 for f, desc in [('data_dictionary.csv', f'{len(dd)} data elements in {dd.domain.nunique()} domains'),
@@ -511,7 +335,10 @@ for f, desc in [('data_dictionary.csv', f'{len(dd)} data elements in {dd.domain.
                 ('task_registry.csv', f'{len(reg_full)} benchmark tasks, full fields'),
                 ('task_cards.csv', 'readiness, accessible n, requirements, powered verdict'),
                 ('GVHD_BENCH_v1.0.md', 'standalone benchmark specification'),
-                ('gate.json', 'pre-stated gate for the ALLO-FM v1 attempt')]:
+                ('gate.json', 'pre-stated gate for the ALLO-FM v1 attempt'),
+                ('DATA_REQUIREMENTS_v1.0.md', 'standalone data-requirement specification: what to collect, how much, how often'),
+                ('data_requirements.csv', f'{len(bom)} rows: layer x package, patients, centres, specimens, cost'),
+                ('programme_cost.csv', 'programme cost by package')]:
     p = os.path.join(SPEC_DIR, f); manifest[f] = dict(description=desc, bytes=os.path.getsize(p),
         sha256=hashlib.sha256(open(p, 'rb').read()).hexdigest()[:16])
 json.dump(manifest, open(os.path.join(SPEC_DIR, 'MANIFEST.json'), 'w'), indent=2)
@@ -522,11 +349,30 @@ checks = [
  ('data elements in the dictionary', len(dd), 129, 0),
  ('domains in the dictionary', dd.domain.nunique(), 25, 0),
  ('elements required for ALLO-FM v1', int((dd.priority == 'R').sum()), 74, 0),
- ('benchmark tasks', len(reg_full), 38, 0),
- ('figures written (PDF + PNG each)', len(FIGS), 11, 0),
+ ('benchmark tasks', len(reg_full), 40, 0),
+ ('figures written (PDF + PNG each)', len(FIGS), 17, 0),
  ('tokens per patient, Tier A+B', tok_by_tier['B'], 7580, 100),
  ('task families', reg.family.nunique(), 7, 0),
  ('Riley n, P=768, AUROC .72, prev .35', riley_n(768, .72, .35)['n'], 47662, 2000),
+ ('tasks: powered', int((cards_df.verdict == 'POWERED').sum()), 15, 0), ('tasks: under-powered', int((cards_df.verdict == 'UNDER-POWERED').sum()), 11, 0),
+ ('tasks: not a single-AUROC task', int((cards_df.verdict == '-').sum()), 14, 0),
+ ('compute-optimal parameters, 100k patients Tier A+B (M)', N_opt / 1e6, 38, 2),
+ ('one pretraining run (A100-hours)', gpu_opt, 3.2, .8), ('whole programme (A100-hours)', PROG_H, 95, 20),
+ ('orders of magnitude below a 7B language model', OOM_VS_LLM, 3.4, .4),
+ ('patients to show +0.03, score correlation 0.85', n80(.03, .85), 840, 80), ('patients to show +0.03, score correlation 0.60', n80(.03, .6), 2100, 250),
+ ('whole-transcriptome head, ceiling 0.88 (thousands of profiles)', n_whole / 1e3, 390, 60), ('whole-transcriptome head, ceiling 0.75 (millions)', n_whole75 / 1e6, 1.0, .15),
+ ('64-d adapter head, ceiling 0.88 (profiles)', n_adapt, 680, 60), ('64-d adapter head, ceiling 0.75 (profiles)', n_adapt75, 1700, 150),
+ ('day-7 blood transcriptome +0.02, 8 centres (profiles)', b1['n for +0.02 (ρ = 0.8, K = 8)'], 3450, 400), ('... realisable gain at rho 0.8', b1['realisable gain (ρ = 0.8, K = 8)'], .029, .005),
+ ('draws per window to come within 0.02 (reliability 0.5)', k_needed(.80, .5, .02), 6, 0), ('nested weekly cohort for 300 evaluable cases (patients)', DENSE_N, 1271, 150),
+ ('centres for 80 % power, tau 0.02 (closed form)', K_required(.03, .02, 300), 17, 2), ('centres for 80 % power, tau 0.04 (closed form)', K_required(.03, .04, 300), 40, 6),
+ ('adopted gate: power at +0.03, K = 20', g20(.03, 'pass_adopted'), .85, .08), ('adopted gate: false pass at +0.01, K = 20', g20(.01, 'pass_adopted'), .02, .04),
+ ('obvious gate: pass probability at its own threshold', g20(.03, 'pass_obvious'), .5, .1),
+ ('percentile-bootstrap coverage at K = 20', cb(20, 'cov_boot'), .926, .03), ('t-interval coverage, worst over K', oc.cov_t.min(), .945, .03),
+ ('static-model observed/expected in the last drift year', drift_df.OE_static.iloc[-1], .69, .12),
+ ('Level-3 validation patients, AUROC 0.75, prevalence 0.15', vtab[(vtab.AUROC == .75) & (vtab.prevalence == .15)].patients.iloc[0], 1117, 120),
+ ('patients per subgroup for a 0.10 sensitivity gap', n_gap_pat[.10], 1012, 100), ('label noise (kappa 0.78): n inflation', ltab[ltab['kappa vs truth'] == .78]['n to show it vs noise-free n'].iloc[0], 1.87, .25),
+ ('data bill, minimum viable (USD millions)', cost.loc['minimum viable', 'total'] / 1e6, 18, 5), ('data bill, credible (USD millions)', cost.loc['credible', 'total'] / 1e6, 51, 12),
+ ('data bill, definitive (USD millions)', cost.loc['definitive', 'total'] / 1e6, 92, 20),
 ]
 directional = [
  ('[SIM] S1: pretraining does NOT help when nothing is shared (rho=0, k=25)',
@@ -603,19 +449,26 @@ md(r'''
 34. Vickers AJ, Elkin EB. **Decision curve analysis.** *Med Decis Making* 26:565–574 (2006). †
 35. Austin PC, Fine JP. **Practical recommendations for reporting Fine-Gray model analyses for competing risk data.** *Stat Med* 2017. †
 36. **AIRR Community (MiAIRR) standards** for repertoire data. † · **OMOP CDM** and the Oncology extension (OHDSI). † · **GA4GH Data Use Ontology.** †
+37. Raudys S, Duin RPW. **Expected classification error of the Fisher linear classifier with pseudo-inverse covariance matrix.** *Pattern Recognit Lett* 19:385–392 (1998). † (the finite-sample learning curve of a plug-in linear classifier used in §9.4)
+38. Riley RD, Debray TPA, Collins GS, et al. **Minimum sample size for external validation of a clinical prediction model with a binary outcome.** *Stat Med* 40:4230–4251 (2021). † (the calibration-slope and O/E precision targets of §9.7)
+39. Hoffmann J, et al. **Training compute-optimal large language models.** arXiv:2203.15556 (2022). † (≈ 20 tokens per parameter) · Muennighoff N, et al. **Scaling data-constrained language models.** *NeurIPS* 2023. † (repeating data up to ≈ 4 epochs)
+40. Spearman C. *Br J Psychol* 3:271–295 (1910) and Brown W. *Br J Psychol* 3:296–322 (1910). † (reliability of an average of *k* measurements, §9.5)
+41. Hernán MA, Robins JM. **Using big data to emulate a target trial when a randomized trial is not available.** *Am J Epidemiol* 183:758–764 (2016). † (task G6)
+42. Agniel D, Kohane IS, Weber GM. **Biases in electronic health record data due to processes within the healthcare system: retrospective observational study.** *BMJ* 361:k1479 (2018). † (when and whether a test is ordered carries information about the patient; the mechanism behind the presence-only comparator of §8.12)
 
 ---
 ## Appendix A — Reproducibility
 
-* **Runtime.** CPU only. Dependencies: numpy, pandas, scipy, scikit-learn, matplotlib. End-to-end run ≈ 2–5 minutes; set the environment variable `ALLOFM_QUICK=1` to cut simulation replicates (numbers get noisier and the consistency tolerances still apply).
+* **Runtime.** CPU only. Dependencies: numpy, pandas, scipy, scikit-learn, matplotlib. End-to-end run ≈ 6–10 minutes on a laptop CPU; set the environment variable `ALLOFM_QUICK=1` to cut simulation replicates (numbers get noisier, the harness uses 8 held-out centres so the Level-2 gate reports *not evaluable*, and the consistency tolerances still apply).
 * **Seeds.** Global seed in the setup cell; every simulation takes an explicit seed. The [SIM] cohort generator is `simulate_cohort(...)` and is deterministic given its seed.
-* **Exported specification** (written to `spec/`, hashes in `spec/MANIFEST.json`): `data_dictionary.csv`, `sampling_schedule.csv`, `task_registry.csv`, `gate.json`.
+* **Exported specification** (written to `spec/`, hashes in `spec/MANIFEST.json`): `data_dictionary.csv`, `sampling_schedule.csv`, `task_registry.csv`, `task_cards.csv`, `GVHD_BENCH_v1.0.md`, `gate.json`, and the data-requirement bundle `DATA_REQUIREMENTS_v1.0.md`, `data_requirements.csv`, `programme_cost.csv`.
 * **Figure layout gate.** Every figure is measured before it is saved: the build fails if any two pieces of rendered text overlap, if text sits on a data marker, line or bar, or if any font is below 6 pt (set `ALLOFM_STRICT_FIGS=1` to make a failure stop the run; otherwise it is printed as a warning). The whole suite passes under both Liberation Sans and the wider DejaVu Sans that Colab falls back to (`ALLOFM_FONT="DejaVu Sans"`).
-* **Tests executed in-notebook.** MAGIC grading vignettes; steroid-response and GRFS vignettes; fast-vs-textbook DeLong agreement; Hanley–McNeil versus simulated standard error; IPCW td-AUROC against the uncensored AUROC; IPCW recovery under censoring; Aalen–Johansen against empirical incidence; net-benefit bounds for perfect and random models; Riley criterion-1 arithmetic; the leakage audit on a cohort with a planted leak; and a final consistency check of every number quoted in the narrative.
+* **Tests executed in-notebook.** MAGIC grading vignettes; steroid-response and GRFS vignettes; fast-vs-textbook DeLong agreement; Hanley–McNeil versus simulated standard error; IPCW td-AUROC against the uncensored AUROC; IPCW recovery under censoring; Aalen–Johansen against empirical incidence; net-benefit bounds for perfect and random models; Riley criterion-1 arithmetic; the leakage audit on a cohort with a planted leak; closed-form paired power against a Monte-Carlo DeLong test; the transcriptome learning-curve formula against simulated heads, with a stress test; Spearman–Brown against simulation; closed-form gate power against the gate simulation; calibration-slope Fisher information against simulation; the label-noise attenuation formula against simulation; interval coverage and gate operating characteristics; planted-effect recovery, a permuted-outcome control and an informative-presence test through the real harness; and a final consistency check of every number quoted in the narrative.
 * **What is *not* in this notebook.** Any trained foundation model, any real patient data, and any claim about clinical performance. The pilot results in §10 come from the executed notebook `GvHD_FM_benchmark_blueprint.ipynb` in this repository.
 
 ## Appendix B — How to use this specification
-1. **To build a cohort:** take `spec/data_dictionary.csv` as the extraction checklist; implement `t_valid` / `t_known` for every element; implement the §4.6 label functions; run the §8.5 audit before any modelling.
-2. **To run the benchmark:** take `spec/task_registry.csv`; for each task fix the landmark, horizon and competing events as given; use the §8.4 metrics; report every mandatory baseline from §8.3 in the same table.
-3. **To make a claim:** check it against the ladder in §8.7 and against `spec/gate.json`, whose hash should be reported with the results.
+1. **To build a cohort:** take `spec/data_dictionary.csv` as the extraction checklist; implement `t_valid` / `t_known` for every element; implement the §4.6 label functions; run the §8.7 audit before any modelling.
+2. **To run the benchmark:** take `spec/task_registry.csv`; for each task fix the landmark (the *issue* day), horizon and competing events as given; use the §8.6 metrics; report every mandatory baseline from §8.5 in the same table, including the presence-only and permuted-outcome controls.
+3. **To make a claim:** check it against the ladder in §8.10 and against `spec/gate.json`, whose hash should be reported with the results.
+4. **To plan a data collection:** read `spec/DATA_REQUIREMENTS_v1.0.md` for the package that matches the claim (minimum viable, credible, definitive), replace the planning values (τ, ρ, κ, unit costs) with measured ones as stage 1 produces them, and re-run §9.
 ''')

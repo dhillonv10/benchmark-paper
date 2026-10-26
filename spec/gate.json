@@ -1,6 +1,6 @@
 {
   "version": "ALLO-FM v1",
-  "primary_task": "B1 \u2014 grade II\u2013IV aGvHD by day +100 from the day +7 state, leave-centre-out across >= 20 centres",
+  "primary_task": "B1 \u2014 grade II\u2013IV aGvHD by day +100 from the day +7 draw (issued day +9), leave-centre-out across >= 20 centres",
   "primary_metric": "IPCW time-dependent AUROC at day 100, competing risks = death and relapse",
   "baselines_to_beat": [
     "MAGIC MAP (ST2+REG3a day-7 algorithm) + clinical covariates",
@@ -9,12 +9,15 @@
     "no-pretraining (supervised only)"
   ],
   "level2_gate": {
-    "delta_auroc_min": 0.03,
-    "ci_over_centres_excludes_zero": true,
+    "delta_auroc_designed_for": 0.03,
+    "ci_method": "centre-level t-interval, K-1 d.f. (not a percentile bootstrap)",
+    "ci_lower_bound_min": 0.01,
     "fraction_centres_improved_min": 0.7,
+    "min_centres": 20,
     "beats_random_twin": true,
     "beats_no_pretraining": true,
-    "bh_across_family": true
+    "bh_across_family": true,
+    "rationale": "interval method, margin and centre count are fixed by the operating characteristics computed in section 8.12"
   },
   "level3_additional": {
     "calibration_slope": [
@@ -26,12 +29,12 @@
       0.4
     ],
     "temporal_validation_required": true,
-    "min_n": "computed per task by riley_n(P, target AUROC, prevalence)"
+    "min_n": "computed per task by riley_n(P, target AUROC, prevalence) and validation_n (section 9.7)"
   },
   "stopping_rule": "if Level 1 is not reached on B1 at stage-1 scale, publish the negative result and do not proceed to stage 3",
   "frozen": {
     "seed": 20261026,
     "splits": "spec/splits_*.json",
-    "label_functions": "section 3.6 of this notebook"
+    "label_functions": "section 4.6 of this notebook"
   }
 }

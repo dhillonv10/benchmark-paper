@@ -1,6 +1,6 @@
 import json, importlib
 import part1
-for m in ('part1b', 'part2', 'part3', 'part3b', 'part4', 'part5'):
+for m in ('part1b', 'part2', 'part3', 'part3b', 'part4', 'part4b', 'part5a', 'part5b', 'part5c'):
     importlib.import_module(m)
 from part1 import CELLS
 nb = dict(cells=[], metadata=dict(

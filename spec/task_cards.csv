@@ -1,35 +1,35 @@
 id,family,readiness,tier needed,split protocol,n accessible (est.),n to develop (50-param),n to show +0.03,achievable AUROC,verdict
-A1,A,R1,A,leave-centre-out + temporal,120000,4554.0,900.0,0.62-0.70,POWERED
-A2,A,R1,A,leave-centre-out + temporal,120000,7733.0,2000.0,0.64-0.72,POWERED
-A3,A,R1,A,leave-centre-out + temporal,90000,6997.0,1000.0,0.62-0.68,POWERED
-A4,A,R1,A,leave-centre-out + temporal,120000,4315.0,800.0,0.64-0.70,POWERED
-A5,A,R1,A,leave-centre-out + temporal,120000,5921.0,1500.0,0.68-0.76,POWERED
+A1,A,R1,A,leave-centre-out + temporal,120000,4554.0,887.0,0.62-0.70,POWERED
+A2,A,R1,A,leave-centre-out + temporal,120000,7733.0,1785.0,0.64-0.72,POWERED
+A3,A,R1,A,leave-centre-out + temporal,90000,6997.0,985.0,0.62-0.68,POWERED
+A4,A,R1,A,leave-centre-out + temporal,120000,4315.0,837.0,0.64-0.70,POWERED
+A5,A,R1,A,leave-centre-out + temporal,120000,5921.0,1368.0,0.68-0.76,POWERED
 A6,A,R1,A+C,leave-centre-out; counterfactual,40000,,,,-
 A7,A,R2,A,randomised arms (BMT CTN 1703),431,,,,-
-B1,B,R2,A+B+C,leave-centre-out + temporal,4000,3103.0,900.0,0.74-0.80,POWERED
-B2,B,R2,A+B+C,leave-centre-out + temporal,4000,4705.0,1850.0,0.74-0.82,UNDER-POWERED
-B3,B,R1,A+B,leave-centre-out; per-day alarms,15000,12076.0,5650.0,0.72-0.80,POWERED
-B4,B,R2,A+B+C,leave-centre-out,3000,4102.0,1250.0,0.70-0.78,UNDER-POWERED
-B5,B,R2,A+B+C,leave-centre-out + temporal,4000,3632.0,1400.0,0.72-0.80,POWERED
-B6,B,R1,A+B,leave-centre-out,25000,3883.0,1150.0,0.68-0.76,POWERED
-C1,C,R3,A+B(+C),leave-centre-out; adjudicated,800,1475.0,650.0,0.78-0.88,UNDER-POWERED
-C2,C,R3,A+B,leave-centre-out; adjudicated,600,2176.0,700.0,0.72-0.82,UNDER-POWERED
-C3,C,R1,A+B,leave-centre-out; decision-analytic,6000,1717.0,650.0,0.72-0.80,POWERED
-C4,C,R2,A+B+C,leave-centre-out,2500,3358.0,1000.0,0.68-0.76,UNDER-POWERED
-C5,C,R2,A+B+C,leave-centre-out,2500,3786.0,900.0,0.66-0.74,UNDER-POWERED
-C6,C,R2,A+B+C,leave-centre-out + temporal,2500,2558.0,950.0,0.72-0.80,UNDER-POWERED
-C7,C,R3,D,leave-centre-out; central read,500,1715.0,800.0,,UNDER-POWERED
+B1,B,R2,A+B+C,leave-centre-out + temporal,4000,3103.0,854.0,0.74-0.80,POWERED
+B2,B,R2,A+B+C,leave-centre-out + temporal,4000,4705.0,1603.0,0.74-0.82,UNDER-POWERED
+B3,B,R1,A+B,leave-centre-out; per-day alarms,15000,12076.0,4722.0,0.72-0.80,POWERED
+B4,B,R2,A+B+C,leave-centre-out,3000,4102.0,1132.0,0.70-0.78,UNDER-POWERED
+B5,B,R2,A+B+C,leave-centre-out + temporal,4000,3632.0,1229.0,0.72-0.80,POWERED
+B6,B,R1,A+B,leave-centre-out,25000,3883.0,1065.0,0.68-0.76,POWERED
+C1,C,R3,A+B(+C),leave-centre-out; adjudicated,800,1475.0,631.0,0.78-0.88,UNDER-POWERED
+C2,C,R3,A+B,leave-centre-out; adjudicated,600,2176.0,726.0,0.72-0.82,UNDER-POWERED
+C3,C,R1,A+B,leave-centre-out; decision-analytic,6000,1717.0,674.0,0.72-0.80,POWERED
+C4,C,R2,A+B+C,leave-centre-out,2500,3358.0,925.0,0.68-0.76,UNDER-POWERED
+C5,C,R2,A+B+C,leave-centre-out,2500,3786.0,888.0,0.66-0.74,UNDER-POWERED
+C6,C,R2,A+B+C,leave-centre-out + temporal,2500,2558.0,864.0,0.72-0.80,UNDER-POWERED
+C7,C,R3,D,leave-centre-out; central read,500,1715.0,744.0,,UNDER-POWERED
 C8,C,R1,A+B,leave-centre-out,8000,,,,-
-D1,D,R2,A+B,leave-centre-out,1200,3594.0,850.0,0.66-0.74,UNDER-POWERED
+D1,D,R2,A+B,leave-centre-out,1200,3594.0,842.0,0.66-0.74,UNDER-POWERED
 D2,D,R2,A+B,randomised arms only,400,,,,-
-D3,D,R1,A+B,leave-centre-out,9000,5450.0,1350.0,0.64-0.72,POWERED
-D4,D,R1,A+B,leave-centre-out,20000,3358.0,1000.0,0.68-0.76,POWERED
-E1,E,R1,A+B,leave-centre-out + temporal,40000,5105.0,1050.0,0.65-0.72,POWERED
-E2,E,R1,A+B,leave-centre-out,12000,9491.0,3050.0,0.70-0.78,POWERED
-E3,E,R2,A+B,leave-centre-out,3000,4706.0,950.0,0.64-0.72,UNDER-POWERED
-E4,E,R1,A+B,leave-centre-out + temporal,30000,4464.0,850.0,0.64-0.72,POWERED
+D3,D,R1,A+B,leave-centre-out,9000,5450.0,1262.0,0.64-0.72,POWERED
+D4,D,R1,A+B,leave-centre-out,20000,3358.0,925.0,0.68-0.76,POWERED
+E1,E,R1,A+B,leave-centre-out + temporal,40000,5105.0,995.0,0.65-0.72,POWERED
+E2,E,R1,A+B,leave-centre-out,12000,9491.0,2639.0,0.70-0.78,POWERED
+E3,E,R2,A+B,leave-centre-out,3000,4706.0,918.0,0.64-0.72,UNDER-POWERED
+E4,E,R1,A+B,leave-centre-out + temporal,30000,4464.0,870.0,0.64-0.72,POWERED
 E5,E,R1,A+B,leave-centre-out; bivariate,20000,,,,-
-F1,F,R4,D,leave-recipient-out,80,11675.0,1600.0,0.60-0.66,UNDER-POWERED
+F1,F,R4,D,leave-recipient-out,80,11675.0,1543.0,0.60-0.66,UNDER-POWERED
 F2,F,R4,C+D,no head trained,1000,,,,-
 F3,F,R4,D,held-out perturbations,40,,,,-
 G1,G,R1,as parent,temporal,120000,,,,-
@@ -37,3 +37,5 @@ G2,G,R1,as parent,leave-registry-out,120000,,,,-
 G3,G,R1,as parent,subgroup within parent split,120000,,,,-
 G4,G,R2,A->D,"nested tiers, same patients",2500,,,,-
 G5,G,R1,as parent,simulated + natural missingness,120000,,,,-
+G6,G,R1,A,registry vs trial effect (BMT CTN 1703),8000,,,,-
+G7,G,R1,as parent,permutation + negative exposure,120000,,,,-
