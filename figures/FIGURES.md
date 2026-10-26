@@ -1,0 +1,70 @@
+# Figures
+
+Vector PDF and 600-dpi PNG of each figure in the paper.
+
+## Fig 1 — decision_timeline
+
+The allo-HCT timeline. Coloured bars are the protocolised exposures and the risk windows they open; markers above are the clinical decision points, each of which is a family of GvHD-Bench tasks (8). The time axis is signed-log, so the first 100 days - where almost every decision sits - are legible alongside two years of follow-up. A model standing at any decision point may use only data whose results were available at that moment (4.1).
+
+Files: `Fig01_decision_timeline.pdf`, `Fig01_decision_timeline.png`
+
+## Fig 2 — pretraining_vs_shared_structure
+
+[SIM] Label-free pretraining pays only in proportion to the feature structure shared across centres. (a) Target-centre AUROC against the number of labelled target patients, at four levels of shared structure rho. (b) The same result as the gain over the tuned raw-feature baseline: large at few labels and high rho, absent at rho = 0, and shrinking everywhere as labels accumulate. Simulated data; the effect sizes follow from the stated generative model, not from patients.
+
+Files: `Fig02_pretraining_vs_shared_structure.pdf`, `Fig02_pretraining_vs_shared_structure.png`
+
+## Fig 3 — predictability_ceiling
+
+What is predictable, and when. (a) The best achievable AUROC rises with the fraction of the outcome-determining causal chain that is observable at the prediction time. Landmarks are placed at assumed values of that fraction [SIM assumption], with the bar showing the distance from what published models achieve to the ceiling at that point. (b) Inverting the curve: the share of the causal chain a model must observe to reach a given AUROC. Reaching 0.85 pre-transplant is not a modelling problem; it would require observing information that does not exist yet at that time.
+
+Files: `Fig03_predictability_ceiling.pdf`, `Fig03_predictability_ceiling.png`
+
+## Fig 4 — architecture
+
+ALLO-FM. The backbone is the day-0-anchored clinical event timeline, which every transplant patient has. Biology enters through modality adapters that each contribute a single summary token at the time its result became known, are trained with modality dropout, and are therefore optional at inference. Every head reads only tokens whose results were available at its landmark L; the mask is enforced inside the attention and is tested in 8.11.
+
+Files: `Fig04_architecture.pdf`, `Fig04_architecture.png`
+
+## Fig 5 — knowledge_time_and_time_encoding
+
+Knowledge time and time encoding. (a) One patient's timeline. An event is a legal input at landmark L only if its result was known by then, which is not the same as having happened by then: the day-20 biopsy signs out on day +23 and is inadmissible, and the day-21 steroid order is banned outright as a proxy for the outcome. (b) The signed-log time encoding keeps early days distinguishable (day +7 vs +14 are different decisions) while compressing late follow-up, where a week does not matter.
+
+Files: `Fig05_knowledge_time_and_time_encoding.pdf`, `Fig05_knowledge_time_and_time_encoding.png`
+
+## Fig 6 — training_requirements
+
+Training requirements, computed from the data specification. (a) Event tokens per patient, cumulative across data tiers: the EHR timeline (Tier B) dominates, and the deep assays add almost nothing to the token count while costing the most to obtain. (b) Compute-optimal model size at 20 tokens per parameter: a realistic allo-HCT corpus implies a model of 50–150 M parameters, not billions. (c) Pretraining cost at $2 per A100-hour, against a general-purpose 7B model for scale. Compute is not the binding constraint on a GvHD foundation model.
+
+Files: `Fig06_training_requirements.pdf`, `Fig06_training_requirements.png`
+
+## Fig 7 — gvhd_bench_structure
+
+GvHD-Bench v1.0. (a) The 38 tasks by family and by the landmark at which the prediction is made; marker shape is data readiness and fill is the powered verdict. Most of the benchmark sits in the first 100 days, where the decisions are. (b) Accessible patients against the number needed to demonstrate a +0.03 AUROC gain over the task baseline: points below the diagonal are tasks the field cannot currently settle, and they are labelled rather than omitted.
+
+Files: `Fig07_gvhd_bench_structure.pdf`, `Fig07_gvhd_bench_structure.png`
+
+## Fig 8 — harness_task_B1
+
+[SIM] The GvHD-Bench harness executing task B1 (grade II-IV aGvHD by day +100 from the day +7 state) on a simulated 24-centre cohort. (a) Leave-centre-out IPCW time-dependent AUROC, one point per held-out centre; the pooled mean alone would hide this spread. (b) Difference from the clinical baseline with a centre-level bootstrap interval. (c) Calibration against the Aalen-Johansen cumulative incidence, which is the competing-risk analogue of a calibration plot. (d) Decision-curve net benefit against treat-all and treat-none. (e) The leakage canary: adding one planted treatment-proxy feature inflates the headline number, and the audit flags it before any model is fitted. Effect sizes are properties of the simulation, not of patients.
+
+Files: `Fig08_harness_task_B1.pdf`, `Fig08_harness_task_B1.png`
+
+## Fig 9 — sample_size_and_power
+
+Three different sample-size questions. (a) Precision: the 95% confidence interval of a single AUROC, against the number of patients. (b) Power: the paired DeLong test for an improvement of 0.02-0.05 AUROC over a correlated baseline - the regime any foundation-model claim actually lives in. (c) Development: the Riley minimum sample size against the number of candidate parameters, which is why head size, not enthusiasm, sets the data requirement.
+
+Files: `Fig09_sample_size_and_power.pdf`, `Fig09_sample_size_and_power.png`
+
+## Fig 10 — data_landscape_and_accrual
+
+What exists against what is needed, and how long it would take. (a) Patients available from each real source, on a log scale, against the Riley minimum for two head sizes. Public transcriptomic resources (grey) are three orders of magnitude short of a 768-parameter head; registry extracts are not. (b) Projected years to reach the required n for each task, by route; points at the left edge are already covered by the retrospective back-catalogue. Tasks needing protocolised biospecimens cannot be served by a registry extract at all, which is why the staged plan buys the registry tasks first and the biobank tasks second.
+
+Files: `Fig10_data_landscape_and_accrual.pdf`, `Fig10_data_landscape_and_accrual.png`
+
+## Fig 11 — pilot_results
+
+The pilot this paper is built on (9 public studies, 838 samples; numbers from the earlier notebook in this repository). (a) Leave-one-study-out transfer with plain normalised genes: tissue biopsies transfer across laboratories and organs, blood and sorted T cells do not. (b) Frozen Geneformer at three sizes against its own random-weight twins and against plain genes: one size beats its twin, none beats the simple baseline, and the largest model is not the best. (c) A zero-parameter score written down in advance - the mean expression of the interferon-gamma and allograft-rejection gene sets - matches the fitted models in inflamed tissue and fails entirely in sorted blood T cells.
+
+Files: `Fig11_pilot_results.pdf`, `Fig11_pilot_results.png`
+

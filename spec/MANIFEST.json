@@ -1,8 +1,8 @@
 {
   "data_dictionary.csv": {
     "description": "129 data elements in 25 domains",
-    "bytes": 28565,
-    "sha256": "29ee1bedd1c22364"
+    "bytes": 28567,
+    "sha256": "12b357578143bc6a"
   },
   "sampling_schedule.csv": {
     "description": "11 specimen types x 13 visits",
@@ -10,9 +10,19 @@
     "sha256": "395de56cb863cc2a"
   },
   "task_registry.csv": {
-    "description": "38 benchmark tasks in 7 families",
-    "bytes": 9028,
-    "sha256": "bc8e4a2eafb21226"
+    "description": "38 benchmark tasks, full fields",
+    "bytes": 11515,
+    "sha256": "022f9a98bd28ae7c"
+  },
+  "task_cards.csv": {
+    "description": "readiness, accessible n, requirements, powered verdict",
+    "bytes": 2687,
+    "sha256": "13ce6a00c31ec24a"
+  },
+  "GVHD_BENCH_v1.0.md": {
+    "description": "standalone benchmark specification",
+    "bytes": 29027,
+    "sha256": "f14c909f69a16f7d"
   },
   "gate.json": {
     "description": "pre-stated gate for the ALLO-FM v1 attempt",
