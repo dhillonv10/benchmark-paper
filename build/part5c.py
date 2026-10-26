@@ -167,6 +167,7 @@ md(r'''
 10. **The plan is one institution, and its claims are about that institution.** The ceiling cohort (1,500), the specimen cohort (420), the eligible fractions of each task, the subgroup shares and the onset-time distribution are planning assumptions (†). The result cannot speak to other centres, to subgroups, or to gains below about +0.03; those need a network (§9.6, stage 3).
 11. **The foundation-model claim depends on a released model.** The plan assumes a pretrained timeline model that can be obtained under a data-use agreement and whose vocabulary can be mapped from the centre's records (OMOP). If none can be obtained, the plan falls back to the tuned simple model (L0) and the tiny model from scratch (L1), and the foundation-model claim is simply not tested; the benchmark, the data plan and the single-centre claim at Level 1C are unaffected.
 12. **The prior-art search of §1.1 was not systematic.** It supports "we found no few-shot or foundation-model benchmark for GvHD", not "none exists".
+13. **The capability ranges of §3 are hypotheses.** They are derived from the literature and from the ceiling model of §3.1; the one real-data check available (`perspective/`, 584 adults at one centre) found no gain from routine day-7 or day-14 timelines and no near-onset gain distinguishable from a shuffled-outcome null. Treat every range in §3 as a target for GvHD-Bench, not an expectation.
 
 ---
 # 13 · Conclusion

@@ -7,3 +7,5 @@ figures_ALLO_FM.zip
 .ipynb_checkpoints/
 __pycache__/
 *.pyc
+perspective/data/
+perspective/__pycache__/
